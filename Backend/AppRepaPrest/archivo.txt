@@ -1,0 +1,149 @@
+-- ************************************************************
+-- Base de datos: api_core
+-- Versión mejorada siguiendo estándares Laravel
+-- ************************************************************
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+-- Tabla de migrations (estándar Laravel)
+CREATE TABLE IF NOT EXISTS `migrations` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `migration` varchar(255) NOT NULL,
+  `batch` int(11) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- TABLA PRINCIPAL DE USUARIOS (CORREGIDA)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `email_verified_at` timestamp NULL DEFAULT NULL,
+  `password` varchar(255) NOT NULL,
+  `remember_token` varchar(100) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `deleted_at` timestamp NULL DEFAULT NULL COMMENT 'Soft delete',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `users_email_unique` (`email`),
+  KEY `users_deleted_at_index` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- PERSONAL ACCESS TOKENS (CON FK CORREGIDA)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS `personal_access_tokens` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `tokenable_type` varchar(255) NOT NULL,
+  `tokenable_id` bigint(20) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `token` varchar(64) NOT NULL,
+  `abilities` text DEFAULT NULL,
+  `last_used_at` timestamp NULL DEFAULT NULL,
+  `expires_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `personal_access_tokens_token_unique` (`token`),
+  KEY `personal_access_tokens_tokenable_type_tokenable_id_index` (`tokenable_type`,`tokenable_id`),
+  -- ✅ CLAVE FORÁNEA AÑADIDA
+  CONSTRAINT `personal_access_tokens_tokenable_id_foreign`
+    FOREIGN KEY (`tokenable_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- TABLA DE SESIONES (NUEVA - RECOMENDADA)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS `sessions` (
+  `id` varchar(255) NOT NULL,
+  `user_id` bigint(20) unsigned DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `payload` longtext NOT NULL,
+  `last_activity` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `sessions_user_id_index` (`user_id`),
+  KEY `sessions_last_activity_index` (`last_activity`),
+  CONSTRAINT `sessions_user_id_foreign`
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- TABLA DE RESETEO DE PASSWORD (NUEVA)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+  `email` varchar(255) NOT NULL,
+  `token` varchar(255) NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- TABLA DE FAILED JOBS (NUEVA - PARA TAREAS FALLIDAS)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS `failed_jobs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(255) NOT NULL,
+  `connection` text NOT NULL,
+  `queue` text NOT NULL,
+  `payload` longtext NOT NULL,
+  `exception` longtext NOT NULL,
+  `failed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ======================================================
+-- DATOS DE PRUEBA (MIGRADOS DESDE usuario_api)
+-- ======================================================
+
+-- Deshabilitar verificaciones de FK temporalmente
+SET FOREIGN_KEY_CHECKS=0;
+
+-- Migrar usuarios de usuario_api a users
+INSERT INTO `users` (`id`, `name`, `email`, `password`, `created_at`, `updated_at`) VALUES
+(1, 'viveplus', 'viveplus@example.com', '$2y$10$6nA0TBpwfpnaWAfp467aOuY4obdr/fBqkIPD7kmF80.OUT/xc41s2', NOW(), NOW()),
+(2, 'user_vive_plus', 'user_vive_plus@example.com', '$2y$10$/bmjQChND6HUfFPRi7HgE..8aNrI05KBjDwo5wRVw0YV9nSyOclGO', NOW(), NOW());
+
+-- Migrar tokens existentes (actualizando tokenable_id)
+INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `name`, `token`, `abilities`, `last_used_at`, `expires_at`, `created_at`, `updated_at`) VALUES
+(1, 'App\\Models\\User', 2, 'VivePlus_2022', 'aa2ac9d6f553ada907cc8074a7b1a769b4a29e9ed7c85553142d68ac9bdcd303', '["*"]', '2024-04-09 08:21:00', NULL, '2024-04-09 08:20:39', '2024-04-09 08:21:00');
+
+-- Re-habilitar verificaciones de FK
+SET FOREIGN_KEY_CHECKS=1;
+
+-- Tabla opcional: Activity Logs (para auditoría)
+CREATE TABLE IF NOT EXISTS `activity_logs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) unsigned DEFAULT NULL,
+  `action` varchar(255) NOT NULL,
+  `description` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `activity_logs_user_id_index` (`user_id`),
+  CONSTRAINT `activity_logs_user_id_foreign`
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS `usuario_api` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user` varchar(255) DEFAULT NULL,
+  `password` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+INSERT INTO `usuario_api` (`id`, `user`, `password`) VALUES
+	(1, 'viveplus', '$2y$10$6nA0TBpwfpnaWAfp467aOuY4obdr/fBqkIPD7kmF80.OUT/xc41s2'),
+	(2, 'user_vive_plus', '$2y$10$/bmjQChND6HUfFPRi7HgE..8aNrI05KBjDwo5wRVw0YV9nSyOclGO'),
+	(3, 'luisssdeessse1s0s0sss', '$2y$10$EaP65/VtK08ipm4u0.JSZOjbzYMPq72y7W1N56aX9fLxWSc/L9rVK');
+
+
+COMMIT;
