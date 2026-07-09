@@ -27,6 +27,5 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
  */
 Route::post('login', [UserApiController::class, 'login']);
 Route::post('registro', [UserApiController::class, 'registro']);
-Route::post('image-list', [ImageUploadController::class, 'show']);
-Route::post('sube_archivos', [ImageUploadController::class, 'sube_archivos_s3']);
+ Route::put('update/{id}', [UserApiController::class, 'update']);
 

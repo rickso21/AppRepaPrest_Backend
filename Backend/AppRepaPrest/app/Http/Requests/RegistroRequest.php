@@ -26,7 +26,7 @@ class RegistroRequest extends FormRequest
     public function rules()
     {
         return [
-            "user" => "required|unique:usuario_api,user",
+        "email" => "required|email|unique:tbl_user,email",
             "password" => "required",
         ];
     }
@@ -38,7 +38,7 @@ class RegistroRequest extends FormRequest
     public function messages()
     {
         return [
-            'user.required' => 'El usuario es obligatorio',
+            'email.required' => 'El email es obligatorio',
             'password.required' => 'La contraseña es obligatoria',
         ];
     }

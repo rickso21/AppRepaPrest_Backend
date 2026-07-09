@@ -25,9 +25,9 @@ class AutenticacionRequest extends FormRequest
      */
     public function rules()
     {
-        return [
-            "user" => "required",
-            "password" => "required",
+       return [
+            "email" => "required|string",
+            "password" => "required|string",
         ];
     }
     /**
@@ -38,8 +38,8 @@ class AutenticacionRequest extends FormRequest
     public function messages()
     {
         return [
-            'user.required' => 'El usuario es obligatorio',
-            'password.required' => 'La contraseña es obligatoria',
+           'email.required' => 'El correo electrónico o número de teléfono es obligatorio.',
+            'password.required' => 'La contraseña es obligatoria.',
         ];
     }
     protected function failedValidation(Validator $validator)
