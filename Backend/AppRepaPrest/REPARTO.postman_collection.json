@@ -1,0 +1,69 @@
+{
+  "info": {
+    "_postman_id": "ecb8bd64-f30e-419b-8e54-f5c5c5fe5726",
+    "name": "REPARTO",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "10665374"
+  },
+  "item": [
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"email\": \"mario@viveplus.com.mx\",\r\n    \"name\": \"mario morelos\",\r\n    \"password\": \"passw123.\",\r\n    \"password_confirmation\": \"passw123.\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/app-reparto/register",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "app-reparto",
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Login",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"email\": \"mario@viveplus.com.mx\",\r\n    \"password\": \"passw123.\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/app-reparto/login",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "app-reparto",
+            "login"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
