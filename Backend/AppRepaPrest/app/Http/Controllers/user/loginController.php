@@ -4,14 +4,10 @@ namespace App\Http\Controllers\user;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\login\editUserRequest;
-
 use App\Http\Requests\login\loginRequest;
 use App\Http\Requests\login\registerRequest;
-use App\Models\Modulo;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class loginController extends Controller
@@ -47,7 +43,7 @@ class loginController extends Controller
     {
         $resp=['res' => false, 'msg' => 'No es posible generar el usuario'];
         $status_resp = 400;
-        $user = new User;
+        $user = new User();
         $user->name = $request->name;
         $user->email = $request->email;
         $user->password = Hash::make($request->password);
