@@ -1,36 +1,3 @@
--- --------------------------------------------------------
--- Host:                         127.0.0.1
--- Versión del servidor:         10.4.32-MariaDB - mariadb.org binary distribution
--- SO del servidor:              Win64
--- HeidiSQL Versión:             12.13.0.7147
--- --------------------------------------------------------
-
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET NAMES utf8 */;
-/*!50503 SET NAMES utf8mb4 */;
-/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-/*!40103 SET TIME_ZONE='+00:00' */;
-/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-
--- Volcando estructura para tabla payment.activity_logs
-CREATE TABLE IF NOT EXISTS `activity_logs` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) DEFAULT NULL,
-  `action` varchar(255) NOT NULL,
-  `description` text DEFAULT NULL,
-  `ip_address` varchar(45) DEFAULT NULL,
-  `user_agent` text DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `activity_logs_user_id_index` (`user_id`),
-  CONSTRAINT `activity_logs_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `tbl_user` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Volcando datos para la tabla payment.activity_logs: ~0 rows (aproximadamente)
-
--- Volcando estructura para tabla payment.migrations
 CREATE TABLE IF NOT EXISTS `migrations` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `migration` varchar(255) NOT NULL,
@@ -38,9 +5,6 @@ CREATE TABLE IF NOT EXISTS `migrations` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Volcando datos para la tabla payment.migrations: ~0 rows (aproximadamente)
-
--- Volcando estructura para tabla payment.password_reset_tokens
 CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
   `email` varchar(255) NOT NULL,
   `token` varchar(255) NOT NULL,
@@ -48,9 +12,6 @@ CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
   PRIMARY KEY (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Volcando datos para la tabla payment.password_reset_tokens: ~0 rows (aproximadamente)
-
--- Volcando estructura para tabla payment.personal_access_tokens
 CREATE TABLE IF NOT EXISTS `personal_access_tokens` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `tokenable_type` varchar(255) NOT NULL,
@@ -76,21 +37,6 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 	(5, 'App\\Models\\UsuarioApi', 2, 'VivePlus_2022', '15ed2ef1ce694d87df40cd555320977cae7eb85f5995b991bc79ed245b195d8d', '["*"]', NULL, NULL, '2026-07-09 00:03:17', '2026-07-09 00:03:17'),
 	(6, 'App\\Models\\UsuarioApi', 2, 'VivePlus_2022', 'f07fe065db0e2c478538c3d8765a15bcbfb9e5d3af843ef681c4c5de8458e63d', '["*"]', '2026-07-09 00:07:34', NULL, '2026-07-09 00:03:31', '2026-07-09 00:07:34');
 
--- Volcando estructura para tabla payment.sessions
-CREATE TABLE IF NOT EXISTS `sessions` (
-  `id` varchar(255) NOT NULL,
-  `user_id` int(11) DEFAULT NULL,
-  `ip_address` varchar(45) DEFAULT NULL,
-  `user_agent` text DEFAULT NULL,
-  `payload` longtext NOT NULL,
-  `last_activity` int(11) NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `sessions_user_id_index` (`user_id`),
-  KEY `sessions_last_activity_index` (`last_activity`),
-  CONSTRAINT `sessions_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `tbl_user` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Volcando datos para la tabla payment.sessions: ~0 rows (aproximadamente)
 
 -- Volcando estructura para tabla payment.tbl_rol
 CREATE TABLE IF NOT EXISTS `tbl_rol` (
@@ -141,13 +87,204 @@ CREATE TABLE IF NOT EXISTS `tbl_user` (
   CONSTRAINT `fk_user_status` FOREIGN KEY (`status_id`) REFERENCES `tbl_status` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Volcando datos para la tabla payment.tbl_user: ~2 rows (aproximadamente)
 INSERT INTO `tbl_user` (`id`, `nombre`, `apellido_p`, `apellido_m`, `email`, `telefono`, `otp`, `password`, `remember_token`, `created_at`, `updated_at`, `deleted_at`, `rol_id`, `status_id`) VALUES
 	(1, 'Luis', 'ruiz', 'ignacio', 'rickso21111@gmail.com', '5587227800', '0', '123', '$2y$10$6nA0TBpwfpnaWAfp467aOuY4obdr/fBqkIPD7kmF80.OUT/xc41s2', '2026-07-08 23:55:56', '2026-07-08 23:55:56', NULL, 1, 1),
 	(2, 'Mario Modificado', 'ceron', 'López', 'mario.nuevo@example.com', '5512345678', '0', '$2y$10$GNfFWwP.65LwkpqQXvFz.eqI.a4pyOcsoZk9SvGtzjp2vy9EKXeke', NULL, '2026-07-08 23:57:04', '2026-07-09 00:13:28', NULL, 1, 1);
 
-/*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
-/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
-/*!40014 SET FOREIGN_KEY_CHECKS=IFNULL(@OLD_FOREIGN_KEY_CHECKS, 1) */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40111 SET SQL_NOTES=IFNULL(@OLD_SQL_NOTES, 1) */;
+
+
+CREATE TABLE IF NOT EXISTS `activity_logs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) DEFAULT NULL,
+  `action` varchar(255) NOT NULL,
+  `description` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `activity_logs_user_id_index` (`user_id`),
+  CONSTRAINT `activity_logs_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `tbl_user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+CREATE TABLE IF NOT EXISTS `sessions` (
+  `id` varchar(255) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `payload` longtext NOT NULL,
+  `last_activity` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `sessions_user_id_index` (`user_id`),
+  KEY `sessions_last_activity_index` (`last_activity`),
+  CONSTRAINT `sessions_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `tbl_user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=UTF8MB4_UNICODE_CI;
+
+
+
+CREATE TABLE tbl_ubicaciones (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL,
+    latitud DECIMAL(10,8) NOT NULL,
+    longitud DECIMAL(11,8) NOT NULL,
+    precision_metros DECIMAL(10,2) DEFAULT NULL,
+    velocidad DECIMAL(10,2) DEFAULT NULL,
+    es_activa BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
+);
+
+
+CREATE TABLE tbl_estado_repartidor (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL,
+    estado VARCHAR(50) NOT NULL, -- disponible, ocupado, desconectado
+    mensaje_estado TEXT,
+    ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
+);
+
+
+
+CREATE TABLE tbl_sesiones_voz (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_origen_id INT NOT NULL,
+    usuario_destino_id INT DEFAULT NULL,
+    canal VARCHAR(100) NOT NULL,
+    tipo ENUM('individual', 'grupal') DEFAULT 'individual',
+    activo BOOLEAN DEFAULT TRUE,
+    fecha_activacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_desactivacion TIMESTAMP NULL,
+    FOREIGN KEY (usuario_origen_id) REFERENCES tbl_user(id),
+    FOREIGN KEY (usuario_destino_id) REFERENCES tbl_user(id)
+);
+
+CREATE TABLE tbl_alertas_panico (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL,
+    latitud DECIMAL(10,8) NOT NULL,
+    longitud DECIMAL(11,8) NOT NULL,
+    tipo_emergencia VARCHAR(50) NOT NULL, -- asaltado, accidente, medico, otro
+    descripcion_adicional TEXT,
+    estado VARCHAR(20) DEFAULT 'activa', -- activa, desactivada, resuelta
+    fecha_activacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_desactivacion TIMESTAMP NULL,
+    desactivada_por_usuario_id INT NULL,
+    razon_desactivacion TEXT,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id),
+    FOREIGN KEY (desactivada_por_usuario_id) REFERENCES tbl_user(id)
+);
+
+
+CREATE TABLE tbl_respuestas_panico (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    alerta_id INT NOT NULL,
+    usuario_id INT NOT NULL,
+    mensaje TEXT NOT NULL,
+    tiempo_estimado VARCHAR(50),
+    fecha_respuesta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (alerta_id) REFERENCES tbl_alertas_panico(id),
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
+);
+
+CREATE TABLE tbl_configuracion_panico (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL UNIQUE,
+    recibir_alertas BOOLEAN DEFAULT TRUE,
+    notificacion_push BOOLEAN DEFAULT TRUE,
+    notificacion_whatsapp BOOLEAN DEFAULT FALSE,
+    notificacion_correo BOOLEAN DEFAULT FALSE,
+    radio_alerta_km DECIMAL(10,2) DEFAULT 10.00,
+    fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
+);
+
+CREATE TABLE tbl_notificaciones_push (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL,
+    titulo VARCHAR(255) NOT NULL,
+    mensaje TEXT NOT NULL,
+    data JSON,
+    leido BOOLEAN DEFAULT FALSE,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
+);
+
+CREATE TABLE tbl_linea_credito (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_id INT NOT NULL,
+    limite_aprobado DECIMAL(10,2) NOT NULL,  -- Ej: 5,000 MXN
+     limite_disponible DECIMAL(10,2) NOT NULL, -- Ej: 5,000 MXN
+    estatus_id INT DEFAULT 1,                -- Activo, Suspendido, etc.
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id),
+    FOREIGN KEY (estatus_id) REFERENCES tbl_status(id)
+);
+
+CREATE TABLE tbl_estado_prestamo(
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  nombre VARCHAR (255));
+
+  INSERT INTO tbl_estado_prestamo (`id`, `nombre`) VALUES
+	(1, 'solicitado'),
+	(2, 'aprobado'),
+	(3, 'activo'),
+	(4, 'Pagado'),
+	(5, 'rechazado');
+
+
+CREATE TABLE tbl_estado_pago(
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  nombre VARCHAR (255));
+
+  INSERT INTO tbl_estado_pago (`id`, `nombre`) VALUES
+	(1, 'pendiente'),
+	(2, 'pagado'),
+	(3, 'vencido');
+
+
+	CREATE TABLE tbl_prestamo (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    folio VARCHAR(20) UNIQUE NOT NULL,
+    usuario_id INT NOT NULL,
+    linea_credito_id INT NOT NULL,
+
+    -- Datos de la solicitud
+    monto_solicitado DECIMAL(10,2) NOT NULL,  -- Lo que el usuario pide
+    monto_total_pagar DECIMAL(10,2) NOT NULL, -- Monto + intereses
+    numero_pagos INT NOT NULL,                -- Quincenas elegidas
+    periodicidad ENUM('quincenal') DEFAULT 'quincenal',
+
+    -- Fechas clave
+    fecha_solicitud TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_aprobacion TIMESTAMP NULL,
+    fecha_desembolso DATE NULL,
+    fecha_primer_pago DATE NULL,
+
+    -- Estados
+    estado_prestamo_id INT NOT NULL,          -- Solicitado, Aprobado, Activo, Pagado, Rechazado
+    FOREIGN KEY (usuario_id) REFERENCES tbl_user(id),
+    FOREIGN KEY (linea_credito_id) REFERENCES tbl_linea_credito(id),
+    FOREIGN KEY (estado_prestamo_id) REFERENCES tbl_estado_prestamo(id)
+);
+
+
+CREATE TABLE tbl_amortizacion (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    prestamo_id INT NOT NULL,
+    numero_pago INT NOT NULL,                 -- Quincena 1, 2, 3...
+    fecha_vencimiento DATE NOT NULL,
+    monto_total DECIMAL(10,2) NOT NULL,       -- Monto a pagar en esa quincena
+    estado_pago_id INT NOT NULL,              -- Pendiente, Pagado, Vencido
+    fecha_pago DATE NULL,
+    referencia_pago VARCHAR(100) NULL,
+    FOREIGN KEY (prestamo_id) REFERENCES tbl_prestamo(id),
+    FOREIGN KEY (estado_pago_id) REFERENCES tbl_estado_pago(id)
+);
+
+
+
+
+
+
+
