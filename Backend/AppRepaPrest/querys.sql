@@ -1,3 +1,9 @@
+Uso de base de datos TiDB Cloud
+
+https://auth.tidbcloud.com/login?state=hKFo2SByc0tPb0d4TkFtVUhoZTh2T1ZDVEc0d2pHbDhfYWp4YaFupWxvZ2luo3RpZNkgRU9GY2NxeUFfaUUwUDZTdkVlRVRGNFRnYVBKdGwwbHqjY2lk2SA2SVp0aENmbVJLSVBFblFTVDhhRGJ0TTdTR2RNbmlSbA&client=6IZthCfmRKIPEnQST8aDbtM7SGdMniRl&protocol=oauth2&response_type=token%20id_token&redirect_uri=https%3A%2F%2Ftidbcloud.com%2Fauth_redirect%3Fprev%3D%252F%253ForgId%253D1372813089209342752&scope=openid%20email&nonce=df-bzue5LRU5vjlAc~jymfrAzwY6kpad&auth0Client=eyJuYW1lIjoiYXV0aDAuanMiLCJ2ZXJzaW9uIjoiOS4xOS4xIn0%3D
+
+
+
 CREATE TABLE IF NOT EXISTS `migrations` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `migration` varchar(255) NOT NULL,
@@ -143,6 +149,7 @@ CREATE TABLE tbl_estado_repartidor (
     ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
 );
+
 INSERT IGNORE INTO `tbl_estado_repartidor` (`usuario_id`, `estado`, `ultima_actualizacion`)
 SELECT
     u.id,
@@ -150,7 +157,6 @@ SELECT
     NOW()
 FROM `tbl_user` u
 WHERE u.id NOT IN (SELECT usuario_id FROM `tbl_estado_repartidor`);
-
 
 CREATE TABLE tbl_sesiones_voz (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -226,6 +232,8 @@ CREATE TABLE tbl_notificaciones_push (
     FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
 );
 
+
+
 CREATE TABLE tbl_linea_credito (
     id INT PRIMARY KEY AUTO_INCREMENT,
     usuario_id INT NOT NULL,
@@ -298,11 +306,6 @@ CREATE TABLE tbl_amortizacion (
 );
 
 
-
-
-
-
-
 -- Verificar usuarios
 SELECT * FROM tbl_user;
 
@@ -320,3 +323,44 @@ SELECT * FROM tbl_estado_repartidor;
 
 -- Verificar ubicaciones recientes
 SELECT * FROM tbl_ubicaciones ORDER BY created_at DESC LIMIT 5;
+
+--para inserrccion de datos en automatico despues de dar de alta un rrepartidor
+CREATE TRIGGER after_user_insert
+AFTER INSERT ON `tbl_user`
+FOR EACH ROW
+INSERT INTO `tbl_configuracion_panico` (`usuario_id`, `recibir_alertas`, `notificacion_push`, `radio_alerta_km`)
+VALUES (NEW.id, TRUE, TRUE, 10.00);
+--para inserrccion de datos en automatico despues de dar de alta un rrepartidor
+CREATE TRIGGER after_user_insert_estado
+AFTER INSERT ON `tbl_user`
+FOR EACH ROW
+INSERT INTO `tbl_estado_repartidor` (`usuario_id`, `estado`, `ultima_actualizacion`)
+VALUES (NEW.id, 'desconectado', NOW());
+
+
+SELECT
+    u.id,
+    u.nombre,
+    u.email,
+    ub.latitud,
+    ub.longitud,
+    ub.created_at,
+    TIMESTAMPDIFF(SECOND, ub.created_at, NOW()) as segundos_activos
+FROM tbl_user u
+INNER JOIN tbl_ubicaciones ub ON u.id = ub.usuario_id
+WHERE ub.es_activa = 1
+AND ub.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+ORDER BY ub.created_at DESC;
+
+SELECT
+    u.id,
+    u.nombre,
+    u.email,
+    MAX(ub.created_at) as ultima_ubicacion,
+    TIMESTAMPDIFF(SECOND, MAX(ub.created_at), NOW()) as segundos_activos
+FROM tbl_user u
+INNER JOIN tbl_ubicaciones ub ON u.id = ub.usuario_id
+WHERE ub.es_activa = 1
+AND ub.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+GROUP BY u.id
+ORDER BY ultima_ubicacion DESC;
