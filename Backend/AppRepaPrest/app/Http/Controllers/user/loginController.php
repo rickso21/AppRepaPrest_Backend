@@ -84,8 +84,8 @@ class loginController extends Controller
                     "token" => $token->plainTextToken,
                     "created_at" => $date->format('Y-m-d H:i:s'),
                     "expired_at" => $date->addMinutes($tiempo_expira)->format('Y-m-d H:i:s'),
-                    "msg" => numeroAleatorio(1, 10),
-                    "user" => [ // Opcional: incluir datos del usuario
+                    "msg" => "Inicio de sesión exitoso",
+                     "user" => [ // Opcional: incluir datos del usuario
                         "id" => $user->id,
                         "nombre" => $user->nombre   ,
                         "email" => $user->email,

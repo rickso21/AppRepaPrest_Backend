@@ -143,7 +143,13 @@ CREATE TABLE tbl_estado_repartidor (
     ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
 );
-
+INSERT IGNORE INTO `tbl_estado_repartidor` (`usuario_id`, `estado`, `ultima_actualizacion`)
+SELECT
+    u.id,
+    'desconectado',
+    NOW()
+FROM `tbl_user` u
+WHERE u.id NOT IN (SELECT usuario_id FROM `tbl_estado_repartidor`);
 
 
 CREATE TABLE tbl_sesiones_voz (
@@ -199,6 +205,15 @@ CREATE TABLE tbl_configuracion_panico (
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES tbl_user(id)
 );
+
+INSERT IGNORE INTO `tbl_configuracion_panico` (`usuario_id`, `recibir_alertas`, `notificacion_push`, `radio_alerta_km`)
+SELECT
+    u.id,
+    TRUE,  -- recibir_alertas
+    TRUE,  -- notificacion_push
+    10.00  -- radio_alerta_km
+FROM `tbl_user` u
+WHERE u.id NOT IN (SELECT usuario_id FROM `tbl_configuracion_panico`);
 
 CREATE TABLE tbl_notificaciones_push (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -288,3 +303,20 @@ CREATE TABLE tbl_amortizacion (
 
 
 
+-- Verificar usuarios
+SELECT * FROM tbl_user;
+
+-- Verificar roles
+SELECT * FROM tbl_rol;
+
+-- Verificar estados
+SELECT * FROM tbl_status;
+
+-- Verificar configuración de pánico
+SELECT * FROM tbl_configuracion_panico;
+
+-- Verificar estado de repartidores
+SELECT * FROM tbl_estado_repartidor;
+
+-- Verificar ubicaciones recientes
+SELECT * FROM tbl_ubicaciones ORDER BY created_at DESC LIMIT 5;
