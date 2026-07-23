@@ -364,3 +364,5 @@ WHERE ub.es_activa = 1
 AND ub.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
 GROUP BY u.id
 ORDER BY ultima_ubicacion DESC;
+
+//crear las tablas cache y jobs para evitar errores
