@@ -14,16 +14,13 @@ use App\Http\Controllers\mapa\MapaController;
 
 Route::middleware('auth:sanctum')->group(function () {
     // 1. Actualizar ubicación (cada 3-5 segundos)
-    Route::post('/mapa/ubicacion', [MapaController::class, 'actualizarUbicacion']);
-
-    // 2. Obtener ubicaciones de todos los repartidores activos
-    Route::get('/mapa/repartidores', [MapaController::class, 'obtenerRepartidores']);
-
-    // 3. Cambiar estado (conectar/desconectar)
-    Route::post('/mapa/estado', [MapaController::class, 'cambiarEstado']);
+    Route::post('/mapa/ubicacion', [MapaController::class, 'Current_location']);
+    Route::get('/mapa/repartidores', [MapaController::class, 'General_location']);
+    Route::get('/mapa/repartidores/{id}', [MapaController::class, 'Specific_user']);
+    Route::post('/mapa/estado', [MapaController::class, 'UserStatus']);
 
     // 4. Activar/Desactivar pánico
-    Route::post('/mapa/panico', [MapaController::class, 'togglePanico']);
+    Route::post('/mapa/panico', [MapaController::class, 'On_User_alert']);
 });
 
 Route::post('/login', [loginController::class, 'login']);
