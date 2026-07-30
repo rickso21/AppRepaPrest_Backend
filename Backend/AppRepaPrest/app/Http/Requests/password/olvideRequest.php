@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Http\Requests\login;
+namespace App\Http\Requests\password;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class editUserRequest extends FormRequest
+class olvideRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -24,20 +24,16 @@ class editUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'nombre' => 'required|string|max:255',
-            'apellido_p' => 'required|string|max:255',
-            'apellido_m' => 'required|string|max:255',
-            'password' => 'string|min:8|confirmed',
+            'email' => 'required|string|email|max:255',
         ];
     }
         public function messages()
     {
         return [
-            'required' => ':attribute is required',
-            'string' => ':attribute must be a string',
-            'min' => ':attribute must be at least 8 characters',
-            'max' => ':attribute must not exceed 255 characters',
-            'confirmed' => ':attribute confirmation does not match',
+            'email.required' => 'Email is required',
+            'email.string' => 'Email must be a string',
+            'email.email' => 'Email must be a valid email address',
+            'email.max' => 'Email must be less than 255 characters',
         ];
     }
     

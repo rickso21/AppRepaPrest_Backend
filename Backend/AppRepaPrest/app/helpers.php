@@ -3,7 +3,31 @@
 function numeroAleatorio($min, $max) {
     return rand($min, $max);
 }
-
+//FUNCTION CREATE CODE CONFIRMATION
+function genera_token(){
+    $code = "";
+    $pattern = "1234567890abcdefghijklmnopqrstuvwxyz";
+    $max = strlen($pattern)-1;
+    for ($i=0; $i < 40; $i++) {
+        $code .= $pattern[crypto_rand_secure(0, $max)];
+    }
+    return $code;
+}
+// CODE THAT HELP TO GENERATE RANDOM CHAR
+function crypto_rand_secure($min, $max)
+{
+    $range = $max - $min;
+    if ($range < 1) return $min; // not so random...
+    $log = ceil(log($range, 2));
+    $bytes = (int) ($log / 8) + 1; // length in bytes
+    $bits = (int) $log + 1; // length in bits
+    $filter = (int) (1 << $bits) - 1; // set all lower bits to 1
+    do {
+        $rnd = hexdec(bin2hex(openssl_random_pseudo_bytes($bytes)));
+        $rnd = $rnd & $filter; // discard irrelevant bits
+    } while ($rnd > $range);
+    return $min + $rnd;
+}
 
 
 ?>

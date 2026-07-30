@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class registerRequest extends FormRequest
+class registerAdminRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -30,7 +30,7 @@ class registerRequest extends FormRequest
             'telefono' => 'nullable|string|max:20',
             'apellido_p' => 'required|string|max:255',
             'apellido_m' => 'required|string|max:255',
-            'code' => 'required|string|max:8',
+            'name_group' => 'required|string',
         ];
     }
     public function messages()
@@ -52,8 +52,8 @@ class registerRequest extends FormRequest
             'apellido_p.max' => 'First surname must be less than 255 characters',
             'apellido_m.string' => 'Second surname must be a string',
             'apellido_m.max' => 'Second surname must be less than 255 characters',
-            'code.string' => 'Code must be a string',
-            'code.max' => 'Code must be less than 8 characters',
+            'name_group.string' => 'Nombre del grupo must be a string',
+            'name_group.required' => 'Nombre del grupo is required',
         ];
     }
     
