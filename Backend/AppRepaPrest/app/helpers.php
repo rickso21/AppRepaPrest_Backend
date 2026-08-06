@@ -28,6 +28,27 @@ function crypto_rand_secure($min, $max)
     } while ($rnd > $range);
     return $min + $rnd;
 }
-
+// FUNCION PARA CALCULAR INTERRES SEGUN EL MONTO Y LOS DIAS
+function calcula_interes($monto, $quincenas) {
+    $interes = 0;
+    switch ($quincenas) {
+        case 1:
+            $interes = $monto * 0.04;
+            break;
+        case 2:
+            $interes = $monto * 0.08;
+            break;
+        case 3:
+            $interes = $monto * 0.10;
+            break;
+        case 4:
+            $interes = $monto * 0.13;
+            break;
+        case 5:
+            $interes = $monto * 0.15;
+            break;
+    }
+    return $interes;
+}
 
 ?>

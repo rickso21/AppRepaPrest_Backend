@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\mapa\MapaController;
+use App\Http\Controllers\prestamo\prestamoController;
 use App\Http\Controllers\user\loginController;
 use App\Http\Controllers\user\passwordController;
 use Illuminate\Http\Request;
@@ -19,6 +20,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Actualizar datos del usuario
     Route::put('/update', [loginController::class, 'edit_user']);
+
+    // solicita prestamo
+    Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
 });
 
 Route::post('/login', [loginController::class, 'login']);

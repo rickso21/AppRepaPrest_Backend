@@ -103,6 +103,8 @@ class loginController extends Controller
         $user->password = Hash::make($request->password);
         $user->telefono = $request->telefono;
         $user->grupo_id = $id_grupo->id;
+        $user->rol_id = 1;
+        $user->status_id = 1;
         $resp['msg'] = "Se genero el usuario con Exito";
         $status_resp = 201;
         try {
