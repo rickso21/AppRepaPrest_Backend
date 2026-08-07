@@ -37,6 +37,8 @@ class passwordController extends Controller
         $user->save();
         $resp['res'] = true;
         $resp['msg'] = 'El correo fue enviado';
+        $resp['token'] = $token;
+        $resp['token_expiracion'] = now()->addHours(24)->format('Y-m-d H:i:s');
         $status_resp=200;
         try {
             Mail::to($request->email)->send(new OlvideMail($data_mail));

@@ -177,7 +177,7 @@ class loginController extends Controller
     }
 
     // FUNCION PARA EDITAR INFORMACIÓN DEL USUARIO
-    public function edit_user(editUserRequest $request)
+     public function edit_user(editUserRequest $request)
     {
         $resp=['res' => false, 'msg' => 'No es posible editar el usuario'];
         $status_resp = 400;
@@ -193,6 +193,7 @@ class loginController extends Controller
         $user->nombre = $request->nombre;
         $user->apellido_p = $request->apellido_p;
         $user->apellido_m = $request->apellido_m;
+        $user->telefono = $request->telefono;        
         $user->password = Hash::make($request->password);
         try {
             $user->save();

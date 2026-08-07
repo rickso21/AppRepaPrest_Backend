@@ -6,84 +6,200 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\prestamo\opcionesRequest;
 use App\Models\User;
 use Illuminate\Http\Request;
+use App\Models\Prestamo; // ← Usar el modelo
 
 class prestamoController extends Controller
 {
-    // FUNCION PARA GENERAR SOLICITUD DE PRESTAMO
+     // FUNCION PARA GENERAR SOLICITUD DE PRESTAMO
     public function solicita_user(Request $request)
     {
-
-        $resp=['res' => false, 'msg' => 'El usuario no existe'];
-        $status_resp = 400;
         $user_token = $request->user();
+
         if (!$user_token) {
-            return response()->json($resp, $status_resp);
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no autenticado'
+            ], 401);
         }
-        // BUSCA PRESTAMOS ACTIVOS DEL USUARIO
-        $prestamos_previos = $user_token->prestamos()->where('estado_prestamo_id', 3)->get();
-        // SI EL USUARIO YA TIENE UN PRESTAMO ACTIVO, NO SE PUEDE SOLICITAR OTRO
-        if($prestamos_previos->count() > 0){
-            $resp=['res' => false, 'msg' => 'El usuario ya tiene un préstamo activo'];
-            return response()->json($resp, $status_resp);
+
+        // VERIFICAR PRESTAMOS ACTIVOS
+        $prestamo_activo = $user_token->prestamos()
+            ->where('estado_prestamo_id', 3)
+            ->exists();
+
+        if ($prestamo_activo) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'El usuario ya tiene un préstamo activo'
+            ], 400);
         }
-        // BUSCA LINEA DE CREDITO DEL USUARIO
-        $linea_credito = $user_token->linea_credito()->get();
-        // SI EL USUARIO NO TIENE LINEA DE CREDITO, SE CREA UNA NUEVA EN CASO DE TENER UNA AJUSTAR CREDITO
-        if($linea_credito->count() == 0){
-            $resp=['res' => true, 'msg' => 'Credito aprobado', 'monto_aprobado' => 1000, 'monto_disponible' => 200];
-            $status_resp = 200;
-            $linea_credito = $user_token->linea_credito()->create([
+
+        // BUSCAR LÍNEA DE CRÉDITO ACTIVA
+        $linea_credito = $user_token->linea_credito()
+            ->where('estatus_id', 1)
+            ->first();
+
+        // SI NO TIENE LÍNEA DE CRÉDITO, CREAR UNA NUEVA
+        if (!$linea_credito) {
+            $nuevo_limite = 200;
+            $user_token->linea_credito()->create([
                 'usuario_id' => $user_token->id,
-                'limite_aprobado' => 1000, // Monto aprobado
-                'limite_disponible' => 200, // Monto disponible
-                'estatus_id' => 1 // Estatus activo
+                'limite_aprobado' => $nuevo_limite,
+                'limite_disponible' => $nuevo_limite,
+                'estatus_id' => 1
             ]);
-        } else {
-            $linea_credito_actual = $linea_credito->where('estatus_id', 1)->last();
-            $prestamos_previos = $user_token->prestamos()->orderBy('id', 'desc')->first();
-            if(!$prestamos_previos ) {
-                $resp=['res' => true, 'msg' => 'Credito aprobado', 'monto_aprobado' => $linea_credito_actual->limite_aprobado, 'monto_disponible' => $linea_credito_actual->limite_disponible];
-                $status_resp = 200;
-            } else {
-                $nuevo_limite = $linea_credito_actual->limite_aprobado + ($prestamos_previos->monto_total_pagar * 0.10);
-                $nuevo_disponible = $linea_credito_actual->limite_disponible + ($prestamos_previos->monto_total_pagar * 0.10);
-                $user_token->linea_credito()->create([
-                    'usuario_id' => $user_token->id,
-                    'limite_aprobado' => $nuevo_limite, // Monto aprobado
-                    'limite_disponible' => $nuevo_disponible, // Monto disponible
-                    'estatus_id' => 1 // Estatus activo
-                ]);
-                $resp=['res' => true, 'msg' => 'Credito aprobado', 'monto_aprobado' => $nuevo_limite, 'monto_disponible' => $nuevo_disponible];
-                $status_resp = 200;
-            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Línea de crédito creada exitosamente',
+                'data' => [
+                    'monto_aprobado' => $nuevo_limite,
+                    'monto_disponible' => $nuevo_limite
+                ]
+            ], 200);
         }
+
+        // SI TIENE LÍNEA DE CRÉDITO, CALCULAR NUEVO LÍMITE
+        $ultimo_prestamo = $user_token->prestamos()
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (!$ultimo_prestamo) {
+            // No tiene préstamos previos
+            return response()->json([
+                'success' => true,
+                'message' => 'Línea de crédito disponible',
+                'data' => [
+                    'monto_aprobado' => $linea_credito->limite_aprobado,
+                    'monto_disponible' => $linea_credito->limite_disponible
+                ]
+            ], 200);
+        }
+
+        // CALCULAR NUEVO LÍMITE BASADO EN EL ÚLTIMO PRÉSTAMO
+        $incremento = $ultimo_prestamo->monto_total_pagar * 0.10;
+        $nuevo_limite = $linea_credito->limite_aprobado + $incremento;
+        $nuevo_disponible = $linea_credito->limite_disponible + $incremento;
+
+        // CREAR NUEVA LÍNEA DE CRÉDITO
+        $user_token->linea_credito()->create([
+            'usuario_id' => $user_token->id,
+            'limite_aprobado' => $nuevo_limite,
+            'limite_disponible' => $nuevo_disponible,
+            'estatus_id' => 1
+        ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Solicitud de préstamo generada exitosamente',
-            'resp' => $resp
+            'message' => 'Línea de crédito actualizada exitosamente',
+            'data' => [
+                'monto_aprobado' => $nuevo_limite,
+                'monto_disponible' => $nuevo_disponible,
+                'incremento_aplicado' => $incremento
+            ]
         ], 200);
     }
+
     // FUNCION PARA GENERAR OPCIONES DE PRESTAMO
     public function genera_opciones(opcionesRequest $request)
     {
         $user_token = $request->user();
+
         if (!$user_token) {
-            return response()->json(['res' => false, 'msg' => 'El usuario no existe'], 400);
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no autenticado'
+            ], 401);
         }
-        // BUSCA LINEA DE CREDITO DEL USUARIO
-        $linea_credito = $user_token->linea_credito()->where('estatus_id', 1)->first();
+
+        // BUSCAR LÍNEA DE CRÉDITO ACTIVA
+        $linea_credito = $user_token->linea_credito()
+            ->where('estatus_id', 1)
+            ->first();
+
         if (!$linea_credito) {
-            return response()->json(['res' => false, 'msg' => 'El usuario no tiene línea de crédito activa'], 400);
+            return response()->json([
+                'res' => false,
+                'msg' => 'El usuario no tiene línea de crédito activa'
+            ], 400);
         }
 
-        $interes = calcula_interes($request->monto_solicitado, $request->numero_pagos);
+        // VERIFICAR QUE EL MONTO SOLICITADO NO SUPERE EL LÍMITE DISPONIBLE
+        if ($request->monto_solicitado > $linea_credito->limite_disponible) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'El monto solicitado excede el límite disponible',
+                'limite_disponible' => $linea_credito->limite_disponible
+            ], 400);
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Opciones de préstamo generadas exitosamente',
-            'interes' => $interes,
-            'monto_total_pagar' => $request->monto_solicitado + $interes
-        ], 200);
+        // CALCULAR INTERÉS
+        $interes = calcula_interes($request->monto_solicitado, $request->numero_pagos);
+        $monto_total = $request->monto_solicitado + $interes;
+
+        try {
+            // GENERAR FOLIO ÚNICO
+            $folio = $this->generarFolio();
+
+            // CREAR LA SOLICITUD DE PRÉSTAMO
+            $prestamo = new Prestamo();
+            $prestamo->folio = $folio;
+            $prestamo->usuario_id = $user_token->id;
+            $prestamo->linea_credito_id = $linea_credito->id;
+            $prestamo->monto_solicitado = $request->monto_solicitado;
+            $prestamo->monto_total_pagar = $monto_total;
+            $prestamo->numero_pagos = $request->numero_pagos;
+            $prestamo->periodicidad = 'quincenal';
+            $prestamo->fecha_solicitud = now();
+            $prestamo->fecha_aprobacion = null;
+            $prestamo->fecha_desembolso = null;
+            $prestamo->fecha_primer_pago = null;
+            $prestamo->estado_prestamo_id = 1; // 1 = Pendiente
+            $prestamo->save();
+
+            $linea_credito->estatus_id = 2; // Deshabilitada/En uso
+            $linea_credito->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Solicitud de préstamo generada y línea de crédito deshabilitada',
+                'data' => [
+                    'prestamo_id' => $prestamo->id,
+                    'folio' => $folio,
+                    'monto_solicitado' => $request->monto_solicitado,
+                    'numero_pagos' => $request->numero_pagos,
+                    'interes' => $interes,
+                    'monto_total_pagar' => $monto_total,
+                    'periodicidad' => 'quincenal',
+                    'fecha_solicitud' => $prestamo->fecha_solicitud,
+                    'estado' => 'Pendiente de aprobación',
+                    'linea_credito_estatus' => 'Deshabilitada (en proceso)',
+                    'limite_disponible_anterior' => $linea_credito->limite_disponible
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al guardar la solicitud',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    // FUNCIÓN PARA GENERAR FOLIO ÚNICO
+    private function generarFolio()
+    {
+        $prefijo = 'PRE-';
+        $fecha = date('Ymd');
+        $aleatorio = strtoupper(substr(uniqid(), -6));
+        $folio = $prefijo . $fecha . '-' . $aleatorio;
+        
+        // VERIFICAR QUE EL FOLIO NO EXISTA
+        while (Prestamo::where('folio', $folio)->exists()) {
+            $aleatorio = strtoupper(substr(uniqid(), -6));
+            $folio = $prefijo . $fecha . '-' . $aleatorio;
+        }
+        
+        return $folio;
     }
 }

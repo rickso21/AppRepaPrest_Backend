@@ -98,4 +98,15 @@ class User extends Authenticatable
             ->orderBy('fecha_activacion', 'desc')
             ->first();
     }
+
+
+    public function linea_credito()
+    {
+        return $this->hasMany(LineaCredito::class, 'usuario_id', 'id');
+    }
+
+    public function prestamos()
+    {
+        return $this->hasMany(Prestamo::class, 'usuario_id', 'id');
+    }
 }

@@ -1,15 +1,11 @@
 <?php
 
+use App\Http\Controllers\mapa\MapaController;
+use App\Http\Controllers\prestamo\prestamoController;
+use App\Http\Controllers\user\loginController;
+use App\Http\Controllers\user\passwordController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
-// Route::get('/user', function (Request $request) {
-//     return $request->user();
-// })->middleware('auth:sanctum');
-
-use App\Http\Controllers\user\loginController;
-
-use App\Http\Controllers\mapa\MapaController;
 
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -21,6 +17,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // 4. Activar/Desactivar pánico
     Route::post('/mapa/panico', [MapaController::class, 'On_User_alert']);
+
+    // Actualizar datos del usuario
+    Route::put('/update', [loginController::class, 'edit_user']);
+
+    // solicita prestamo
+    Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
+
+
+    Route::post('/generar-opciones', [PrestamoController::class, 'genera_opciones']);
+
 });
 
 Route::post('/login', [loginController::class, 'login']);
@@ -28,5 +34,3 @@ Route::post('/register', [loginController::class, 'register']);
 Route::post('/register_admin', [loginController::class, 'register_admin']);
 Route::post('/forgot-password', [passwordController::class, 'olvide_password']);
 Route::post('/new-password', [passwordController::class, 'nueva_password']);
-
-
