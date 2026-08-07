@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -9,10 +10,17 @@ class AlertaPanico extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'usuario_id', 'latitud', 'longitud', 'tipo_emergencia',
-        'descripcion_adicional', 'estado', 'fecha_activacion',
-        'fecha_desactivacion', 'desactivada_por_usuario_id',
-        'razon_desactivacion', 'activo'
+        'usuario_id',
+        'latitud',
+        'longitud',
+        'tipo_emergencia',
+        'descripcion_adicional',
+        'estado',
+        'fecha_activacion',
+        'fecha_desactivacion',
+        'desactivada_por_usuario_id',
+        'razon_desactivacion',
+        'activo'
     ];
 
     public function usuario()

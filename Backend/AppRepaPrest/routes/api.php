@@ -25,6 +25,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('/login', [loginController::class, 'login']);
 Route::post('/register', [loginController::class, 'register']);
-
+Route::post('/register_admin', [loginController::class, 'register_admin']);
+Route::post('/forgot-password', [passwordController::class, 'olvide_password']);
+Route::post('/new-password', [passwordController::class, 'nueva_password']);
 
 
