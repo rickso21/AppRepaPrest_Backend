@@ -25,7 +25,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
 
 
-    Route::post('/generar-opciones', [PrestamoController::class, 'genera_opciones']);
+    Route::post('/genera_opcione', [prestamoController::class, 'genera_opciones']);
 
 });
 
