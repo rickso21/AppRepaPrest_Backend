@@ -470,7 +470,7 @@ class AsesorController extends Controller
                         $linea_credito->save();
                     }
                     
-                    // ✅ GENERAR PDF DE APROBACIÓN
+                    // GENERAR PDF DE APROBACIÓN
                     $pdfData = $this->generarPdfPrestamo($prestamo, 'aprobacion', $user_token);
                     $pdfGenerado = true;
                     $tipoPdf = 'aprobacion';
@@ -523,7 +523,7 @@ class AsesorController extends Controller
                         $credito_reactivado = true;
                     }
                     
-                    // ✅ GENERAR PDF DE LIQUIDACIÓN
+                    // GENERAR PDF DE LIQUIDACIÓN
                     $pdfData = $this->generarPdfPrestamo($prestamo, 'liquidacion', $user_token);
                     $pdfGenerado = true;
                     $tipoPdf = 'liquidacion';
@@ -559,7 +559,7 @@ class AsesorController extends Controller
                         $credito_reactivado = true;
                     }
                     
-                    // ✅ GENERAR PDF DE RECHAZO
+                    //  GENERAR PDF DE RECHAZO
                    $pdfData = $this->generarPdfPrestamo($prestamo, 'rechazo', $user_token);
                     $pdfGenerado = true;
                     $tipoPdf = 'rechazo';
@@ -639,7 +639,7 @@ class AsesorController extends Controller
                         'estatus_texto' => $linea_credito->estatus_id == 1 ? 'Activa (Disponible)' : 'En Uso',
                         'credito_reactivado' => $credito_reactivado
                     ] : null,
-                    // ✅ INCLUIR INFORMACIÓN DEL PDF GENERADO
+                    // INCLUIR INFORMACIÓN DEL PDF GENERADO
                    'pdf' => $pdfGenerado ? [
                     'generado' => true,
                     'tipo' => $tipoPdf,
@@ -667,8 +667,8 @@ class AsesorController extends Controller
             return response()->json([
                 'success' => false,
             'message' => 'Error al actualizar el estado',
-            'error' => $e->getMessage(), // 👈 Esto mostrará el error real
-            'trace' => $e->getTraceAsString() // 👈 Esto mostrará la traza
+            'error' => $e->getMessage(), // Esto mostrará el error real
+            'trace' => $e->getTraceAsString() // Esto mostrará la traza
             ], 500);
         }
     }
@@ -711,10 +711,10 @@ public function generarPdfPrestamo($prestamo, $tipo, $usuario)
             'isRemoteEnabled' => false
         ]);
 
-        // ✅ RUTA CON CARPETA POR TIPO
+        // RUTA CON CARPETA POR TIPO
         $filename = "prestamo_{$prestamo->id}_{$tipo}_" . now()->format('Ymd_His') . ".pdf";
         
-        // ✅ Construir ruta con subcarpeta según el tipo
+        // Construir ruta con subcarpeta según el tipo
         $folder = match($tipo) {
             'aprobacion' => 'aprobacion',
             'liquidacion' => 'liquidacion',
@@ -735,7 +735,7 @@ public function generarPdfPrestamo($prestamo, $tipo, $usuario)
             'tipo' => $tipo
         ]);
 
-        // ✅ CREAR DIRECTORIO CON FILE SYSTEM (incluyendo subcarpeta)
+        // CREAR DIRECTORIO CON FILE SYSTEM (incluyendo subcarpeta)
         if (!is_dir($basePath)) {
             Log::info('Creando directorio: ' . $basePath);
             if (!mkdir($basePath, 0777, true)) {
@@ -761,7 +761,7 @@ public function generarPdfPrestamo($prestamo, $tipo, $usuario)
             throw new \Exception("El archivo no existe después de guardarlo: {$absolutePath}");
         }
 
-        // ✅ Guardar la ruta en la base de datos
+        // Guardar la ruta en la base de datos
         $campo = "ruta_pdf_{$tipo}";
         $prestamo->$campo = $dbPath;
         $prestamo->save();
@@ -809,7 +809,7 @@ public function descargarPdfPrestamo($prestamo_id, $tipo)
             ], 404);
         }
 
-        // ✅ Obtener el nombre del archivo desde la ruta
+        // Obtener el nombre del archivo desde la ruta
         $fullPath = $prestamo->$campo;
         $filename = basename($fullPath);
         
