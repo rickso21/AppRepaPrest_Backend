@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\mapa\MapaController;
 use App\Http\Controllers\prestamo\prestamoController;
+use App\Http\Controllers\AsesorPrestamo\AsesorController;
+
 use App\Http\Controllers\user\loginController;
 use App\Http\Controllers\user\passwordController;
 use Illuminate\Http\Request;
@@ -14,20 +16,46 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/mapa/repartidores', [MapaController::class, 'General_location']);
     Route::get('/mapa/repartidores/{id}', [MapaController::class, 'Specific_user']);
     Route::post('/mapa/estado', [MapaController::class, 'UserStatus']);
-
     // 4. Activar/Desactivar pánico
     Route::post('/mapa/panico', [MapaController::class, 'On_User_alert']);
+
 
     // Actualizar datos del usuario
     Route::put('/update', [loginController::class, 'edit_user']);
 
+
+
     // solicita prestamo
-    Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
+    Route::get('/solicita-user', [prestamoController::class, 'solicita_user']);
 
 
-    Route::post('/generar-opciones', [PrestamoController::class, 'genera_opciones']);
+    // 2. Generar opciones de préstamo y crear solicitud
+    Route::post('/genera-opciones', [prestamoController::class, 'genera_opciones']);
+
+
+
+    
+
+
+
+     
+    // 1. Registrar pago de un cliente
+    Route::post('/registrar-pago', [AsesorController::class, 'registrarPago']);
+    
+    // 2. Consultar estado de cuenta de un cliente
+    Route::get('/consultar-estado-cuenta', [AsesorController::class, 'consultarEstadoCuenta']);
+    
+    // 3. Actualizar estado de un préstamo (aprobar, rechazar, etc.)
+    Route::put('/actualizar-estado', [AsesorController::class, 'actualizarEstadoPrestamo']);
+    
+    // 4. Listar todos los préstamos (con filtros)
+    Route::get('/listar-prestamos', [AsesorController::class, 'listarPrestamos']);
+
+    Route::get('/prestamos/{id}/pdf/{tipo}', [AsesorController::class, 'descargarPdfPrestamo'])
+            ->where('tipo', 'aprobacion|liquidacion|rechazo');
 
 });
+
 
 Route::post('/login', [loginController::class, 'login']);
 Route::post('/register', [loginController::class, 'register']);
