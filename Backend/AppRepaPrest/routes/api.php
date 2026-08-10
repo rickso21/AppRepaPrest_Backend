@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/solicita-user', [prestamoController::class, 'solicita_user']);
 
 
+<<<<<<< HEAD
     // 2. Generar opciones de préstamo y crear solicitud
     Route::post('/genera-opciones', [prestamoController::class, 'genera_opciones']);
 
@@ -53,6 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/prestamos/{id}/pdf/{tipo}', [AsesorController::class, 'descargarPdfPrestamo'])
             ->where('tipo', 'aprobacion|liquidacion|rechazo');
+=======
+    Route::post('/genera_opcione', [prestamoController::class, 'genera_opciones']);
+>>>>>>> a7fab3927efcfd0ed808257fdc5dc261e453c3e8
 
 });
 
