@@ -82,7 +82,7 @@
 </head>
 <body>
     <div class="header">
-        <div class="titulo-principal">✅ PRÉSTAMO LIQUIDADO</div>
+        <div class="titulo-principal">PRÉSTAMO LIQUIDADO</div>
         <div class="subtitulo">Folio: <strong>{{ $prestamo->folio }}</strong></div>
         <div class="subtitulo">Fecha de Liquidación: {{ \Carbon\Carbon::parse($prestamo->fecha_liquidacion)->format('d/m/Y H:i') }}</div>
     </div>
