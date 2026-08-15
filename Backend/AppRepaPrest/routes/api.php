@@ -3,7 +3,9 @@
 use App\Http\Controllers\mapa\MapaController;
 use App\Http\Controllers\prestamo\prestamoController;
 use App\Http\Controllers\AsesorPrestamo\AsesorController;
-
+use App\Http\Controllers\pago\pagoController;
+use App\Http\Controllers\MercadoPagoAllExterno\MercadoPagoController;
+use App\Http\Controllers\tranferencia\tranferenciaController;
 use App\Http\Controllers\user\loginController;
 use App\Http\Controllers\user\passwordController;
 use Illuminate\Http\Request;
@@ -18,8 +20,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/mapa/estado', [MapaController::class, 'UserStatus']);
     // 4. Activar/Desactivar pánico
     Route::post('/mapa/panico', [MapaController::class, 'On_User_alert']);
-
-
     // Actualizar datos del usuario
     Route::put('/update', [loginController::class, 'edit_user']);
 
@@ -27,34 +27,62 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // solicita prestamo
     Route::get('/solicita-user', [prestamoController::class, 'solicita_user']);
-
-
     // 2. Generar opciones de préstamo y crear solicitud
     Route::post('/genera-opciones', [prestamoController::class, 'genera_opciones']);
 
 
 
-    
+
+    // Abonar Pagos
+    Route::post('/registrar-pago', [pagoController::class, 'registrarPago']);
+
+    // Registrar pago con transferencia
+    Route::post('/registrar-pago-transferencia', [tranferenciaController::class, 'registrarPagoTransferencia']);
+
+    // Registrar pago con transferencia
+    Route::post('/registrar-pago-transferencia', [tranferenciaController::class, 'registrarPagoTransferencia']);
+
+    // Verificar transferencia (subir comprobante)
+    Route::post('/verificar-transferencia', [tranferenciaController::class, 'verificarTransferencia']);
+
+    // Validar transferencia manualmente (Asesor)
+    Route::post('/validar-transferencia-manual', [tranferenciaController::class, 'validarTransferenciaManual']);
+
+    // Verificar transferencias pendientes (Cron/Manual)
+    Route::get('/verificar-transferencias-pendientes', [tranferenciaController::class, 'verificarTransferenciasPendientes']);
+
+    // Consultar estado de una transferencia
+    Route::get('/consultar-estado-transferencia', [tranferenciaController::class, 'consultarEstadoTransferencia']);
 
 
 
-     
-    // 1. Registrar pago de un cliente
-    Route::post('/registrar-pago', [AsesorController::class, 'registrarPago']);
-    
-    // 2. Consultar estado de cuenta de un cliente
+    // 1. Consultar estado de cuenta de un cliente
     Route::get('/consultar-estado-cuenta', [AsesorController::class, 'consultarEstadoCuenta']);
-    
-    // 3. Actualizar estado de un préstamo (aprobar, rechazar, etc.)
+    // 2. Administra solicitud de prestamos (aprobar, rechazar y liquidar)
     Route::put('/actualizar-estado', [AsesorController::class, 'actualizarEstadoPrestamo']);
-    
-    // 4. Listar todos los préstamos (con filtros)
+    // 3. Listar todos los préstamos (con filtros)
     Route::get('/listar-prestamos', [AsesorController::class, 'listarPrestamos']);
-
+    // 3. Genera pdf usuarios (Solicitud de Prestamos)
     Route::get('/prestamos/{id}/pdf/{tipo}', [AsesorController::class, 'descargarPdfPrestamo'])
             ->where('tipo', 'aprobacion|liquidacion|rechazo');
 
 });
+
+
+//Mercado Pago Validacion de Usuario Externo
+
+//1 * Consultar información de un pago en Mercado Pago
+Route::get('/consultar-pago-mp', [MercadoPagoController::class, 'consultarPagoMercadoPago']);
+/*
+GET /api/consultar-pago-mp?pago_id=123
+GET /api/consultar-pago-mp?preference_id=MP-123456
+GET /api/consultar-pago-mp?payment_id=1234567890
+*/
+//2 * Consultar preferencia de Mercado Pago
+Route::get('/consultar-preferencia-mp', [MercadoPagoController::class, 'consultarPreferenciaMercadoPago']);
+/*
+GET /api/consultar-preferencia-mp?preference_id=MP-123456
+*/
 
 
 Route::post('/login', [loginController::class, 'login']);
@@ -62,3 +90,4 @@ Route::post('/register', [loginController::class, 'register']);
 Route::post('/register_admin', [loginController::class, 'register_admin']);
 Route::post('/forgot-password', [passwordController::class, 'olvide_password']);
 Route::post('/new-password', [passwordController::class, 'nueva_password']);
+Route::post('/verificar_pago', [pagoController::class, 'verificarPago']);

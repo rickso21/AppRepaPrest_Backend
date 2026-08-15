@@ -18,6 +18,7 @@ public function Current_location(Request $request)
     try {
         $user = $request->user();
 
+
         $request->validate([
             'latitud' => 'required|numeric|between:-90,90',
             'longitud' => 'required|numeric|between:-180,180',

@@ -127,6 +127,22 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+
+
+    'mercadopago' => [
+        'driver' => 'daily',
+        'path' => storage_path('logs/mercadopago.log'),
+        'level' => env('LOG_LEVEL', 'debug'),
+        'days' => 14,
+    ],
+
+    'security' => [
+        'driver' => 'daily',
+        'path' => storage_path('logs/security.log'),
+        'level' => 'warning',
+        'days' => 30,
+    ],
+
     ],
 
 ];

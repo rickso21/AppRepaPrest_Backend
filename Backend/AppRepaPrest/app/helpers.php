@@ -4,33 +4,39 @@
 // FUNCIONES DE UTILIDAD GENERAL
 // ============================================
 
-function numeroAleatorio($min, $max) {
-    return rand($min, $max);
-}
-
-function genera_token(){
-    $code = "";
-    $pattern = "1234567890abcdefghijklmnopqrstuvwxyz";
-    $max = strlen($pattern)-1;
-    for ($i=0; $i < 40; $i++) {
-        $code .= $pattern[crypto_rand_secure(0, $max)];
+if (!function_exists('numeroAleatorio')) {
+    function numeroAleatorio($min, $max) {
+        return rand($min, $max);
     }
-    return $code;
 }
 
-function crypto_rand_secure($min, $max)
-{
-    $range = $max - $min;
-    if ($range < 1) return $min;
-    $log = ceil(log($range, 2));
-    $bytes = (int) ($log / 8) + 1;
-    $bits = (int) $log + 1;
-    $filter = (int) (1 << $bits) - 1;
-    do {
-        $rnd = hexdec(bin2hex(openssl_random_pseudo_bytes($bytes)));
-        $rnd = $rnd & $filter;
-    } while ($rnd > $range);
-    return $min + $rnd;
+if (!function_exists('genera_token')) {
+    function genera_token(){
+        $code = "";
+        $pattern = "1234567890abcdefghijklmnopqrstuvwxyz";
+        $max = strlen($pattern)-1;
+        for ($i=0; $i < 40; $i++) {
+            $code .= $pattern[crypto_rand_secure(0, $max)];
+        }
+        return $code;
+    }
+}
+
+if (!function_exists('crypto_rand_secure')) {
+    function crypto_rand_secure($min, $max)
+    {
+        $range = $max - $min;
+        if ($range < 1) return $min;
+        $log = ceil(log($range, 2));
+        $bytes = (int) ($log / 8) + 1;
+        $bits = (int) $log + 1;
+        $filter = (int) (1 << $bits) - 1;
+        do {
+            $rnd = hexdec(bin2hex(openssl_random_pseudo_bytes($bytes)));
+            $rnd = $rnd & $filter;
+        } while ($rnd > $range);
+        return $min + $rnd;
+    }
 }
 
 // ============================================
@@ -47,28 +53,28 @@ if (!function_exists('calcula_interes_detallado')) {
             4 => 0.0795,
             5 => 0.0795,
         ];
-        
+
         $tasa_quincenal = $tasas[$quincenas] ?? 0.0675;
         $iva = 0.16;
-        
+
         $interes_quincenal = $monto * $tasa_quincenal;
         $iva_quincenal = $interes_quincenal * $iva;
         $total_interes_quincenal = $interes_quincenal + $iva_quincenal;
         $capital_quincenal = $monto / $quincenas;
         $pago_quincenal = $capital_quincenal + $total_interes_quincenal;
-        
+
         $interes_quincenal = (int) round($interes_quincenal);
         $iva_quincenal = (int) round($iva_quincenal);
         $total_interes_quincenal = (int) round($total_interes_quincenal);
         $capital_quincenal = (int) round($capital_quincenal);
         $pago_quincenal = (int) round($pago_quincenal);
-        
+
         $total_interes = $total_interes_quincenal * $quincenas;
         $total_pagar = $monto + $total_interes;
-        
+
         $desglose = [];
         $total_pagos = 0;
-        
+
         for ($i = 0; $i < $quincenas; $i++) {
             $desglose[] = [
                 'quincena' => $i + 1,
@@ -80,7 +86,7 @@ if (!function_exists('calcula_interes_detallado')) {
             ];
             $total_pagos += $pago_quincenal;
         }
-        
+
         $diferencia = $total_pagar - $total_pagos;
         if ($diferencia != 0 && $quincenas > 0) {
             $desglose[$quincenas - 1]['pago_total'] += $diferencia;
@@ -88,9 +94,9 @@ if (!function_exists('calcula_interes_detallado')) {
             $total_pagar = array_sum(array_column($desglose, 'pago_total'));
             $total_interes = $total_pagar - $monto;
         }
-        
+
         $pago_quincenal_promedio = (int) round($total_pagar / $quincenas);
-        
+
         return [
             'monto' => (int) $monto,
             'quincenas' => $quincenas,
@@ -126,22 +132,22 @@ if (!function_exists('pago_quincenal')) {
 if (!function_exists('tasa_segun_plazo')) {
     function tasa_segun_plazo($quincenas) {
         $tasas = [
-            1 => 0.0925,   // 9.25% 
-            2 => 0.1000,   // 10.00% 
-            3 => 0.1100,   // 11.00% 
-            4 => 0.1200,   // 12.00% 
+            1 => 0.0925,   // 9.25%
+            2 => 0.1000,   // 10.00%
+            3 => 0.1100,   // 11.00%
+            4 => 0.1200,   // 12.00%
             5 => 0.1300,   // 13.00%
             6 => 0.1400,   // 14.00%
             7 => 0.1500,   // 15.00%
             9 => 0.1600,   // 16.00%
         ];
-        
+
         if ($quincenas > 10) {
             $base = 0.1600;
             $incremento = ($quincenas - 10) * 0.005;
             return min($base + $incremento, 0.3500);
         }
-        
+
         return $tasas[$quincenas] ?? 0.0795;
     }
 }
@@ -150,7 +156,7 @@ if (!function_exists('calcular_incremento_entero')) {
     function calcular_incremento_entero($monto_total_pagar, $tipo_redondeo = 'ceil')
     {
         $incremento_base = $monto_total_pagar * 0.10;
-        
+
         switch ($tipo_redondeo) {
             case 'ceil':
                 return (int) ceil($incremento_base);
@@ -189,7 +195,7 @@ if (!function_exists('verificar_pagos_exactos')) {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         $pagos = array_column($detalle['desglose_quincenal'], 'pago_total');
         $suma = array_sum($pagos);
-        
+
         return [
             'es_exacto' => $suma === $detalle['total_pagar'],
             'total_pagos' => $suma,
@@ -212,7 +218,7 @@ if (!function_exists('getEstadoTexto')) {
             3 => 'Pagado',
             4 => 'Rechazado'
         ];
-        
+
         return $estados[$estado_id] ?? 'Desconocido';
     }
 }
@@ -226,11 +232,11 @@ if (!function_exists('validarTransicionEstado')) {
             3 => [],        // Pagado → (ninguna)
             4 => []         // Rechazado → (ninguna)
         ];
-        
+
         if (!isset($transiciones[$estado_actual])) {
             return false;
         }
-        
+
         return in_array($nuevo_estado, $transiciones[$estado_actual]);
     }
 }
@@ -244,7 +250,7 @@ if (!function_exists('getTransicionesPermitidas')) {
             3 => ['Ninguna (Estado final)'],
             4 => ['Ninguna (Estado final)']
         ];
-        
+
         return $transiciones[$estado_actual] ?? ['Ninguna'];
     }
 }
@@ -272,7 +278,7 @@ if (!function_exists('getSiguientesEstados')) {
             3 => [],
             4 => []
         ];
-        
+
         return $transiciones[$estado_actual] ?? [];
     }
 }
@@ -311,19 +317,19 @@ if (!function_exists('calcularProximaFechaPago')) {
         if (!$prestamo->fecha_desembolso) {
             return null;
         }
-        
+
         $fecha_desembolso = $prestamo->fecha_desembolso;
         if (!$fecha_desembolso instanceof \Carbon\Carbon) {
             $fecha_desembolso = \Carbon\Carbon::parse($fecha_desembolso);
         }
-        
+
         $pagos_realizados = $prestamo->pagos_realizados ?? 0;
         $proxima_fecha = $fecha_desembolso->copy()->addDays($pagos_realizados * 15);
-        
+
         while ($proxima_fecha->lt(now())) {
             $proxima_fecha->addDays(15);
         }
-        
+
         return $proxima_fecha;
     }
 }
@@ -334,14 +340,14 @@ if (!function_exists('calcularDiasRestantes')) {
         if (!$fecha_futura instanceof \Carbon\Carbon) {
             $fecha_futura = \Carbon\Carbon::parse($fecha_futura);
         }
-        
+
         $hoy = now()->startOfDay();
         $fecha_futura_inicio = $fecha_futura->copy()->startOfDay();
-        
+
         if ($fecha_futura_inicio->lt($hoy)) {
             return 0;
         }
-        
+
         return $hoy->diffInDays($fecha_futura_inicio);
     }
 }
@@ -371,18 +377,18 @@ if (!function_exists('validarFechaDesembolso')) {
                 'message' => 'Préstamo se desembolsa hoy, pago permitido'
             ];
         }
-        
+
         if ($fecha_desembolso_inicio->lt($hoy)) {
             return [
                 'valido' => true,
                 'message' => 'Préstamo con fecha de desembolso pasada, pago permitido'
             ];
         }
-        
+
         if ($fecha_desembolso_inicio->gt($hoy)) {
             if ($es_pago_adelantado) {
                 $dias_para_desembolso = $hoy->diffInDays($fecha_desembolso_inicio);
-                
+
                 if ($dias_para_desembolso > 15) {
                     return [
                         'valido' => false,
@@ -392,16 +398,16 @@ if (!function_exists('validarFechaDesembolso')) {
                         'limite_dias' => 15
                     ];
                 }
-                
+
                 return [
                     'valido' => true,
                     'message' => 'Pago adelantado permitido',
                     'dias_para_desembolso' => $dias_para_desembolso
                 ];
             }
-            
+
             $dias_restantes = $hoy->diffInDays($fecha_desembolso_inicio);
-            
+
             return [
                 'valido' => false,
                 'message' => 'El préstamo será desembolsado el ' . $fecha_desembolso->format('d/m/Y'),
@@ -427,7 +433,7 @@ if (!function_exists('calcularPorcentajePagado')) {
         if ($prestamo->monto_total_pagar <= 0) {
             return 0;
         }
-        
+
         $monto_pagado = $prestamo->monto_total_pagar - ($prestamo->monto_restante ?? 0);
         return round(($monto_pagado / $prestamo->monto_total_pagar) * 100, 2);
     }
@@ -440,12 +446,12 @@ if (!function_exists('generarFolio')) {
         $fecha = date('Ymd');
         $aleatorio = strtoupper(substr(uniqid(), -6));
         $folio = $prefijo . $fecha . '-' . $aleatorio;
-        
+
         while (\App\Models\Prestamo::where('folio', $folio)->exists()) {
             $aleatorio = strtoupper(substr(uniqid(), -6));
             $folio = $prefijo . $fecha . '-' . $aleatorio;
         }
-        
+
         return $folio;
     }
 }
@@ -464,39 +470,39 @@ if (!function_exists('sumarDiasHabiles')) {
                 throw new \InvalidArgumentException('Fecha inválida: ' . $e->getMessage());
             }
         }
-        
+
         if ($dias < 0) {
             throw new \InvalidArgumentException('El número de días debe ser positivo');
         }
-        
+
         $fecha_resultado = $fecha->copy();
         $dias_agregados = 0;
-        
+
         if ($dias == 0) {
             return $fecha_resultado;
         }
-        
+
         while ($dias_agregados < $dias) {
             $fecha_resultado->addDay();
-            
+
             $es_dia_habile = true;
-            
+
             if (!$fecha_resultado->isWeekday()) {
                 $es_dia_habile = false;
             }
-            
+
             if ($es_dia_habile && !empty($festivos)) {
                 $fecha_str = $fecha_resultado->format('Y-m-d');
                 if (in_array($fecha_str, $festivos)) {
                     $es_dia_habile = false;
                 }
             }
-            
+
             if ($es_dia_habile) {
                 $dias_agregados++;
             }
         }
-        
+
         return $fecha_resultado;
     }
 }
@@ -511,7 +517,7 @@ if (!function_exists('contarDiasHabiles')) {
                 throw new \InvalidArgumentException('Fecha de inicio inválida: ' . $e->getMessage());
             }
         }
-        
+
         if (!$fecha_fin instanceof \Carbon\Carbon) {
             try {
                 $fecha_fin = \Carbon\Carbon::parse($fecha_fin);
@@ -519,35 +525,35 @@ if (!function_exists('contarDiasHabiles')) {
                 throw new \InvalidArgumentException('Fecha final inválida: ' . $e->getMessage());
             }
         }
-        
+
         if ($fecha_fin->lt($fecha_inicio)) {
             return 0;
         }
-        
+
         $dias = 0;
         $fecha_actual = $fecha_inicio->copy()->addDay();
-        
+
         while ($fecha_actual->lte($fecha_fin)) {
             $es_dia_habile = true;
-            
+
             if (!$fecha_actual->isWeekday()) {
                 $es_dia_habile = false;
             }
-            
+
             if ($es_dia_habile && !empty($festivos)) {
                 $fecha_str = $fecha_actual->format('Y-m-d');
                 if (in_array($fecha_str, $festivos)) {
                     $es_dia_habile = false;
                 }
             }
-            
+
             if ($es_dia_habile) {
                 $dias++;
             }
-            
+
             $fecha_actual->addDay();
         }
-        
+
         return $dias;
     }
 }
@@ -569,18 +575,18 @@ if (!function_exists('esDiaHabile')) {
                 throw new \InvalidArgumentException('Fecha inválida: ' . $e->getMessage());
             }
         }
-        
+
         if (!$fecha->isWeekday()) {
             return false;
         }
-        
+
         if (!empty($festivos)) {
             $fecha_str = $fecha->format('Y-m-d');
             if (in_array($fecha_str, $festivos)) {
                 return false;
             }
         }
-        
+
         return true;
     }
 }
@@ -595,17 +601,17 @@ if (!function_exists('proximaFechaHabil')) {
                 throw new \InvalidArgumentException('Fecha inválida: ' . $e->getMessage());
             }
         }
-        
+
         $fecha_resultado = $fecha->copy();
-        
+
         if (esDiaHabile($fecha_resultado, $festivos)) {
             return $fecha_resultado;
         }
-        
+
         while (!esDiaHabile($fecha_resultado, $festivos)) {
             $fecha_resultado->addDay();
         }
-        
+
         return $fecha_resultado;
     }
 }
@@ -623,16 +629,16 @@ if (!function_exists('calcularDiasParaPrimerPago')) {
         if (!$fecha_desembolso instanceof \Carbon\Carbon) {
             $fecha_desembolso = \Carbon\Carbon::parse($fecha_desembolso);
         }
-        
+
         if (!$fecha_primer_pago) {
             $fecha_primer_pago = sumarDiasHabiles($fecha_desembolso, 15, $festivos);
         } elseif (!$fecha_primer_pago instanceof \Carbon\Carbon) {
             $fecha_primer_pago = \Carbon\Carbon::parse($fecha_primer_pago);
         }
-        
+
         $dias_habiles = contarDiasHabiles($fecha_desembolso, $fecha_primer_pago, $festivos);
         $dias_naturales = $fecha_desembolso->diffInDays($fecha_primer_pago);
-        
+
         return [
             'fecha_desembolso' => $fecha_desembolso->format('Y-m-d'),
             'fecha_primer_pago' => $fecha_primer_pago->format('Y-m-d'),
@@ -652,7 +658,7 @@ if (!function_exists('getFestivosMexico')) {
         if (!$year) {
             $year = date('Y');
         }
-        
+
         $festivos = [
             $year . '-01-01',
             $year . '-02-05',
@@ -662,7 +668,7 @@ if (!function_exists('getFestivosMexico')) {
             $year . '-11-20',
             $year . '-12-25',
         ];
-        
+
         $festivos_ajustados = [];
         foreach ($festivos as $fecha) {
             $carbon = \Carbon\Carbon::parse($fecha);
@@ -673,12 +679,12 @@ if (!function_exists('getFestivosMexico')) {
                 $festivos_ajustados[] = $fecha;
             }
         }
-        
+
         if ($year == 2026) {
             $festivos_ajustados[] = '2026-04-02';
             $festivos_ajustados[] = '2026-04-03';
         }
-        
+
         return $festivos_ajustados;
     }
 }
@@ -690,11 +696,11 @@ if (!function_exists('getFestivosMexico')) {
 if (!function_exists('generarMontosSugeridos')) {
     /**
      * GENERAR MONTOS SUGERIDOS DINÁMICOS BASADOS EN EL LÍMITE DISPONIBLE
-     * 
+     *
      * @param int $limite_disponible Límite de crédito disponible
      * @param int $max_opciones Número máximo de opciones a mostrar (por defecto 8)
      * @return array Lista de montos sugeridos
-     * 
+     *
      * @example
      * generarMontosSugeridos(556) // [100, 200, 300, 400, 556]
      * generarMontosSugeridos(1000) // [100, 200, 300, 400, 500, 750, 1000]
@@ -702,18 +708,18 @@ if (!function_exists('generarMontosSugeridos')) {
     function generarMontosSugeridos($limite_disponible, $max_opciones = 8)
     {
         $montos = [];
-        
+
         // ============================================
         // 1. MONTOS BASE (escalones fijos)
         // ============================================
         $escalones = [100, 200, 300, 400, 500, 1000, 2000, 3000, 5000, 10000];
-        
+
         foreach ($escalones as $escalon) {
             if ($escalon <= $limite_disponible) {
                 $montos[] = $escalon;
             }
         }
-        
+
         // ============================================
         // 2. MONTOS PROPORCIONALES
         // ============================================
@@ -728,7 +734,7 @@ if (!function_exists('generarMontosSugeridos')) {
                 }
             }
         }
-        
+
         // ============================================
         // 3. MONTOS PERSONALIZADOS (múltiplos de 50)
         // ============================================
@@ -742,20 +748,20 @@ if (!function_exists('generarMontosSugeridos')) {
                 $base += 50;
             }
         }
-        
+
         // ============================================
         // 4. SIEMPRE INCLUIR EL MONTO MÁXIMO
         // ============================================
         if (!in_array($limite_disponible, $montos)) {
             $montos[] = $limite_disponible;
         }
-        
+
         // ============================================
         // 5. LIMPIAR Y ORDENAR
         // ============================================
         $montos = array_unique($montos);
         sort($montos);
-        
+
         // ============================================
         // 6. LIMITAR A MÁXIMO DE OPCIONES
         // ============================================
@@ -764,18 +770,18 @@ if (!function_exists('generarMontosSugeridos')) {
             $primeros = array_slice($montos, 0, 3);
             $ultimos = array_slice($montos, -3);
             $medios = [];
-            
+
             if (count($montos) > 6) {
                 $medio = array_slice($montos, 3, count($montos) - 6);
                 if (!empty($medio)) {
                     $medios = array_slice($medio, 0, 2);
                 }
             }
-            
+
             $montos = array_unique(array_merge($primeros, $medios, $ultimos));
             sort($montos);
         }
-        
+
         return $montos;
     }
 }
@@ -783,9 +789,9 @@ if (!function_exists('generarMontosSugeridos')) {
 if (!function_exists('getPlazosDisponibles')) {
     /**
      * OBTENER PLAZOS DISPONIBLES PARA PRÉSTAMOS
-     * 
+     *
      * @return array Lista de plazos disponibles (en quincenas)
-     * 
+     *
      * @example
      * getPlazosDisponibles() // [2] - Solo 2 quincenas
      */
@@ -799,7 +805,7 @@ if (!function_exists('getPlazosDisponibles')) {
 if (!function_exists('getMontoMaximoSugerido')) {
     /**
      * OBTENER EL MONTO MÁXIMO SUGERIDO (REDONDEADO)
-     * 
+     *
      * @param int $limite_disponible Límite disponible
      * @return int Monto máximo redondeado
      */
@@ -813,7 +819,7 @@ if (!function_exists('getMontoMaximoSugerido')) {
 if (!function_exists('getMontosPorRango')) {
     /**
      * OBTENER MONTOS SUGERIDOS POR RANGO
-     * 
+     *
      * @param int $limite_disponible Límite disponible
      * @param int $rango Rango de incremento (por defecto 100)
      * @return array Lista de montos
@@ -822,12 +828,15 @@ if (!function_exists('getMontosPorRango')) {
     {
         $montos = [];
         $actual = $rango;
-        
+
         while ($actual <= $limite_disponible) {
             $montos[] = $actual;
             $actual += $rango;
         }
-        
+
         return $montos;
     }
 }
+
+
+
