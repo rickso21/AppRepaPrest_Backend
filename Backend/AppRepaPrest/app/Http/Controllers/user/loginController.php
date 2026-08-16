@@ -147,7 +147,8 @@ class loginController extends Controller
                         "id" => $user->id,
                         "nombre" => $user->nombre." ".$user->apellido_p." ".$user->apellido_m,
                         "email" => $user->email,
-                        "telefono" => $user->telefono
+                        "telefono" => $user->telefono,
+                        "rol_id" => $user->rol_id,
                     ]
                 ];
                 $status_resp = 200;

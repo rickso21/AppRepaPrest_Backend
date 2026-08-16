@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\mapa\MapaController;
 use App\Http\Controllers\prestamo\prestamoController;
+use App\Http\Controllers\user\adminController;
 use App\Http\Controllers\user\loginController;
 use App\Http\Controllers\user\passwordController;
 use Illuminate\Http\Request;
@@ -23,6 +24,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // solicita prestamo
     Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
+    Route::get('/prestamo/show', [adminController::class, 've_prestamos']);
+
 });
 
 Route::post('/login', [loginController::class, 'login']);
@@ -30,6 +33,6 @@ Route::post('/register', [loginController::class, 'register']);
 Route::post('/register_admin', [loginController::class, 'register_admin']);
 Route::post('/forgot-password', [passwordController::class, 'olvide_password']);
 Route::post('/new-password', [passwordController::class, 'nueva_password']);
-
+Route::post('/admin/register', [adminController::class, 'index']);
 
 

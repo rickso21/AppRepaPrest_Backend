@@ -2,15 +2,16 @@
 
 namespace App\Http\Controllers\user;
 
-use Carbon\Carbon;
-use App\Models\User;
-use App\Mail\OlvideMail;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\password\newPassRequest;
+use App\Http\Requests\password\olvideRequest;
+use App\Mail\OlvideMail;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use App\Http\Requests\password\olvideRequest;
-use App\Http\Requests\password\newPassRequest;
+use Resend\Laravel\Facades\Resend;
 
 class passwordController extends Controller
 {
@@ -40,8 +41,15 @@ class passwordController extends Controller
         $status_resp=200;
         try {
             Mail::to($request->email)->send(new OlvideMail($data_mail));
+            // Resend::emails()->send([
+            //     'from' => 'Camino Claro <noreply@caminoclaro.com>',
+            //     'to' => [$request->user()->email],
+            //     'subject' => 'Forgot Password',
+            //     'html' => (new OlvideMail($data_mail))->render(),
+            // ]);
         } catch (\Throwable $th) {
             $resp['msg'] = "El correo no fue enviado";
+            $resp['error'] = $th->getMessage();
             $status_resp=409;
         }
         return response()->json($resp, $status_resp);
