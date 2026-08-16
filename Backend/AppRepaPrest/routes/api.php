@@ -25,6 +25,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // solicita prestamo
     Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
     Route::get('/prestamo/show', [adminController::class, 've_prestamos']);
+    Route::put('/prestamo/aprobar/{id}', [adminController::class, 'aprobar_prestamo']);
 
 });
 

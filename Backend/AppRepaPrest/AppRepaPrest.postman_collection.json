@@ -1,9 +1,9 @@
 {
   "info": {
-    "_postman_id": "b70e7fef-951a-4e5d-ae60-fd94fcbceba9",
+    "_postman_id": "39463e19-b2ba-480b-9d42-bdde95b2ae45",
     "name": "AppRepaPrest",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "27251615"
+    "_exporter_id": "10665374"
   },
   "item": [
     {
@@ -16,7 +16,7 @@
         "header": [],
         "body": {
           "mode": "raw",
-          "raw": "{\r\n    \"user\":\"\",\r\n    \"password\":\"\"\r\n}",
+          "raw": "{\r\n    \"email\":\"1test@test.com\",\r\n    \"password\":\"123ABCd.\"\r\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -24,17 +24,15 @@
           }
         },
         "url": {
-          "raw": "http://127.0.0.1:8000/api/login",
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/login",
           "protocol": "http",
           "host": [
-            "127",
-            "0",
-            "0",
-            "1"
+            "localhost"
           ],
-          "port": "8000",
           "path": [
-            "api",
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
             "login"
           ]
         }
@@ -57,7 +55,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\r\n    \"user\":\"tamara\",\r\n    \"password\":\"1234\"\r\n}",
+          "raw": "{\r\n    \"email\":\"1test@test.com\",\r\n    \"password\":\"12345ABC.\",\r\n    \"password_confirmation\": \"12345ABC.\",\r\n    \"name\": \"test\",\r\n    \"apellido_p\": \"test\",\r\n    \"apellido_m\": \"test\",\r\n    \"code\": \"ITSAAIOF\"\r\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -65,17 +63,95 @@
           }
         },
         "url": {
-          "raw": "http://127.0.0.1:8000/registro",
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/register",
           "protocol": "http",
           "host": [
-            "127",
-            "0",
-            "0",
-            "1"
+            "localhost"
           ],
-          "port": "8000",
           "path": [
-            "registro"
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "registroAdmin",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "",
+            "value": "",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"email\":\"test2@test.com\",\r\n    \"password\":\"12345ABC.\",\r\n    \"password_confirmation\": \"12345ABC.\",\r\n    \"name\": \"test\",\r\n    \"apellido_p\": \"user\",\r\n    \"apellido_m\": \"1\",\r\n    \"name_group\": \"Grupo test\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/register_admin",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "register_admin"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "registro Admin Prestamos",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "",
+            "value": "",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"email\":\"test_test@test.com\",\r\n    \"password\":\"12345ABC.\",\r\n    \"password_confirmation\": \"12345ABC.\",\r\n    \"name\": \"test\",\r\n    \"apellido_p\": \"user\",\r\n    \"apellido_m\": \"1\",\r\n    \"name_group\": \"Grupo test\",\r\n    \"codigo\": \"123456\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/admin/register",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "admin",
+            "register"
           ]
         }
       },
@@ -126,13 +202,20 @@
       "name": "actualizar",
       "request": {
         "auth": {
-          "type": "noauth"
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "8|YuqUTZMMUL8osBxYMjtm5F95onaggZubvHRx8n0Z8cd860e1",
+              "type": "string"
+            }
+          ]
         },
         "method": "PUT",
         "header": [],
         "body": {
           "mode": "raw",
-          "raw": "{\r\n    \"nombre\": \"Mario Modificado\",\r\n    \"email\": \"mario.nuevo@example.com\",\r\n    \"password\": \"nuevaContrasenaOpcional123\"\r\n}",
+          "raw": "{\r\n    \"nombre\": \"User\",\r\n    \"apellido_m\": \"Test1\",\r\n    \"apellido_p\": \"Test1\",\r\n    \"email\": \"1test@example.com\",\r\n    \"password\": \"12345ABc.\",\r\n    \"password_confirmation\": \"12345ABc.\"\r\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -140,18 +223,206 @@
           }
         },
         "url": {
-          "raw": "http://127.0.0.1:8000/update/2",
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/update",
           "protocol": "http",
           "host": [
-            "127",
-            "0",
-            "0",
-            "1"
+            "localhost"
           ],
-          "port": "8000",
           "path": [
-            "update",
-            "2"
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "update"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Forgot Password",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"email\": \"m.d.29@hotmail.com\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/forgot-password",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "forgot-password"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "New Password",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"password\": \"123ABCd.\",\r\n    \"password_confirmation\": \"123ABCd.\",\r\n    \"token\": \"n1xykohomrjtqadnmls1nuo4mih8bar5u1tyn3ov\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/new-password",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "new-password"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Solicitia ",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "9|DqQMGHPvL5LsNRoRy4VAjPgnNgPmIwx51iaISFyv20df50a5",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/prestamo/solicita",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "prestamo",
+            "solicita"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Muestra Prestamos",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "10|XxS890jMZpmwyGd99lm0Gw8YCb5L9yx05i2aSU9m7da3c618",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/prestamo/show",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "prestamo",
+            "show"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Aprobar Prestamo",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "10|XxS890jMZpmwyGd99lm0Gw8YCb5L9yx05i2aSU9m7da3c618",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"estado_prestamo_id\": 2\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost/AppRepaPrest_Backend/Backend/AppRepaPrest/prestamo/aprobar/1",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "path": [
+            "AppRepaPrest_Backend",
+            "Backend",
+            "AppRepaPrest",
+            "prestamo",
+            "aprobar",
+            "1"
           ]
         }
       },

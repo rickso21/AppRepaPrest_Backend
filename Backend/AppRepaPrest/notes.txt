@@ -1,0 +1,2 @@
+Query necesaria para admin prestamos:
+INSERT INTO tbl_rol (nombre) values ('admin prestamos');
