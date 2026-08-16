@@ -37,17 +37,23 @@ class passwordController extends Controller
         $user->save();
         $resp['res'] = true;
         $resp['msg'] = 'El correo fue enviado';
-        $resp['token'] = $token;
-        $resp['token_expiracion'] = now()->addHours(24)->format('Y-m-d H:i:s');
         $status_resp=200;
         try {
             Mail::to($request->email)->send(new OlvideMail($data_mail));
+            // Resend::emails()->send([
+            //     'from' => 'Camino Claro <noreply@caminoclaro.com>',
+            //     'to' => [$request->user()->email],
+            //     'subject' => 'Forgot Password',
+            //     'html' => (new OlvideMail($data_mail))->render(),
+            // ]);
         } catch (\Throwable $th) {
             $resp['msg'] = "El correo no fue enviado";
+            $resp['error'] = $th->getMessage();
             $status_resp=409;
         }
         return response()->json($resp, $status_resp);
     }
+
 
     // FUNCION PARA GUARDAR NUEVA CONTRASEÑA
     public function nueva_password(newPassRequest $request)

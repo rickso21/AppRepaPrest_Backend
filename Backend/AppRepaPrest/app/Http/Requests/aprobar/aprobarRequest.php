@@ -1,10 +1,11 @@
 <?php
 
-namespace App\Http\Requests\prestamo;
+namespace App\Http\Requests\aprobar;
 
 use Illuminate\Foundation\Http\FormRequest;
-
-class AsesorPrestamoRequest extends FormRequest
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
+class aprobarRequest extends FormRequest
 {
     public function authorize()
     {
@@ -14,7 +15,6 @@ class AsesorPrestamoRequest extends FormRequest
     public function rules()
     {
         $rules = [
-            'usuario_id' => 'required|exists:tbl_user,id',
             'estado_prestamo_id' => 'required|in:2,3,4,5',
             'motivo_rechazo' => 'nullable|string|max:500',
         ];
@@ -30,12 +30,17 @@ class AsesorPrestamoRequest extends FormRequest
     public function messages()
     {
         return [
-            'usuario_id.required' => 'El ID del usuario es requerido',
-            'usuario_id.exists' => 'El usuario no existe',
             'estado_prestamo_id.required' => 'El estado es requerido',
             'estado_prestamo_id.in' => 'El estado no es válido',
-            'fecha_desembolso.date' => 'Formato de fecha inválido',
-            'fecha_desembolso.after_or_equal' => 'La fecha de desembolso debe ser hoy o en el futuro',
         ];
+    }
+
+     public function failedValidation(Validator $validator)
+    {
+        throw new HttpResponseException(response()->json([
+            'success'   => false,
+            'message'   => 'Validation errors',
+            'data'      => $validator->errors()
+        ],400));
     }
 }

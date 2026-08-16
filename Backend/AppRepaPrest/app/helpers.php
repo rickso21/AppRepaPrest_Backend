@@ -689,39 +689,83 @@ if (!function_exists('getFestivosMexico')) {
     }
 }
 
-// ============================================
-// FUNCIONES DE MONTOS SUGERIDOS Y PLAZOS
-// ============================================
+
+if (!function_exists('getPlazosDisponibles')) {
+    /**
+     * OBTENER PLAZOS DISPONIBLES SEGÚN EL MONTO
+     *
+     * @param int|null $monto Monto a evaluar (si es null, devuelve todos los plazos)
+     * @return array Lista de plazos disponibles (en quincenas)
+     *
+     * @example
+     * getPlazosDisponibles()        // [1, 2] - Todos los plazos
+     * getPlazosDisponibles(300)     // [1, 2] - Monto ≤ 400
+     * getPlazosDisponibles(500)     // [2]    - Monto > 400
+     * getPlazosDisponibles(430)     // [2]    - Monto > 400
+     */
+    function getPlazosDisponibles($monto = null)
+    {
+        // Si no se pasa monto, devolver todos los plazos disponibles
+        if ($monto === null) {
+            return [1, 2];
+        }
+
+        // Si el monto es menor o igual a 400, permitir 1 y 2 quincenas
+        if ($monto <= 399) {
+            return [1, 2];
+        }
+
+        // Si el monto es mayor a 400, solo permitir 2 quincenas
+        return [2];
+    }
+}
+
 
 if (!function_exists('generarMontosSugeridos')) {
     /**
-     * GENERAR MONTOS SUGERIDOS DINÁMICOS BASADOS EN EL LÍMITE DISPONIBLE
+     * GENERAR MONTOS SUGERIDOS CON INDICACIÓN DE PLAZOS DISPONIBLES POR MONTO
      *
      * @param int $limite_disponible Límite de crédito disponible
-     * @param int $max_opciones Número máximo de opciones a mostrar (por defecto 8)
-     * @return array Lista de montos sugeridos
-     *
-     * @example
-     * generarMontosSugeridos(556) // [100, 200, 300, 400, 556]
-     * generarMontosSugeridos(1000) // [100, 200, 300, 400, 500, 750, 1000]
+     * @param int $max_opciones Número máximo de opciones a mostrar (por defecto 10)
+     * @return array Lista de montos sugeridos con sus plazos disponibles
      */
-    function generarMontosSugeridos($limite_disponible, $max_opciones = 8)
+    function generarMontosSugeridos($limite_disponible, $max_opciones = 10)
     {
         $montos = [];
+        $limite_disponible = (int) $limite_disponible;
+
+        // Si el límite es menor a 100, retornar solo el límite
+        if ($limite_disponible < 100) {
+            $plazos = getPlazosDisponibles($limite_disponible);
+            return [
+                [
+                    'monto' => $limite_disponible,
+                    'plazos_disponibles' => $plazos,
+                    'puede_1_quincena' => in_array(1, $plazos),
+                    'puede_2_quincenas' => in_array(2, $plazos)
+                ]
+            ];
+        }
 
         // ============================================
         // 1. MONTOS BASE (escalones fijos)
         // ============================================
-        $escalones = [100, 200, 300, 400, 500, 1000, 2000, 3000, 5000, 10000];
+        $escalones = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 5000, 10000];
 
         foreach ($escalones as $escalon) {
             if ($escalon <= $limite_disponible) {
-                $montos[] = $escalon;
+                $plazos = getPlazosDisponibles($escalon);
+                $montos[] = [
+                    'monto' => $escalon,
+                    'plazos_disponibles' => $plazos,
+                    'puede_1_quincena' => in_array(1, $plazos),
+                    'puede_2_quincenas' => in_array(2, $plazos)
+                ];
             }
         }
 
         // ============================================
-        // 2. MONTOS PROPORCIONALES
+        // 2. MONTOS PROPORCIONALES (25%, 50%, 75%, 100%)
         // ============================================
         if ($limite_disponible > 500) {
             $proporciones = [0.25, 0.50, 0.75, 1.0];
@@ -729,90 +773,155 @@ if (!function_exists('generarMontosSugeridos')) {
                 $monto_prop = (int) ($limite_disponible * $prop);
                 // Redondear a la decena más cercana
                 $monto_prop = round($monto_prop / 10) * 10;
+
                 if ($monto_prop > 0 && $monto_prop <= $limite_disponible) {
-                    $montos[] = $monto_prop;
+                    // Verificar si ya existe
+                    $existe = false;
+                    foreach ($montos as $m) {
+                        if ($m['monto'] == $monto_prop) {
+                            $existe = true;
+                            break;
+                        }
+                    }
+
+                    if (!$existe) {
+                        $plazos = getPlazosDisponibles($monto_prop);
+                        $montos[] = [
+                            'monto' => $monto_prop,
+                            'plazos_disponibles' => $plazos,
+                            'puede_1_quincena' => in_array(1, $plazos),
+                            'puede_2_quincenas' => in_array(2, $plazos)
+                        ];
+                    }
                 }
             }
         }
 
         // ============================================
-        // 3. MONTOS PERSONALIZADOS (múltiplos de 50)
+        // 3. MONTOS INTERMEDIOS (múltiplos de 50)
         // ============================================
         if ($limite_disponible >= 100) {
-            // Agregar montos intermedios cada 50
             $base = 100;
-            while ($base <= $limite_disponible && count($montos) < $max_opciones) {
-                if (!in_array($base, $montos)) {
-                    $montos[] = $base;
+            $contador = 0;
+
+            while ($base <= $limite_disponible && count($montos) < $max_opciones + 5) {
+                // Verificar si ya existe
+                $existe = false;
+                foreach ($montos as $m) {
+                    if ($m['monto'] == $base) {
+                        $existe = true;
+                        break;
+                    }
                 }
+
+                if (!$existe) {
+                    $plazos = getPlazosDisponibles($base);
+                    $montos[] = [
+                        'monto' => $base,
+                        'plazos_disponibles' => $plazos,
+                        'puede_1_quincena' => in_array(1, $plazos),
+                        'puede_2_quincenas' => in_array(2, $plazos)
+                    ];
+                }
+
                 $base += 50;
+                $contador++;
+
+                // Si ya tenemos suficientes opciones, salir
+                if ($contador > 20 && count($montos) >= 6) {
+                    break;
+                }
             }
         }
 
         // ============================================
         // 4. SIEMPRE INCLUIR EL MONTO MÁXIMO
         // ============================================
-        if (!in_array($limite_disponible, $montos)) {
-            $montos[] = $limite_disponible;
+        $existe_maximo = false;
+        foreach ($montos as $m) {
+            if ($m['monto'] == $limite_disponible) {
+                $existe_maximo = true;
+                break;
+            }
+        }
+
+        if (!$existe_maximo) {
+            $plazos = getPlazosDisponibles($limite_disponible);
+            $montos[] = [
+                'monto' => $limite_disponible,
+                'plazos_disponibles' => $plazos,
+                'puede_1_quincena' => in_array(1, $plazos),
+                'puede_2_quincenas' => in_array(2, $plazos)
+            ];
         }
 
         // ============================================
-        // 5. LIMPIAR Y ORDENAR
+        // 5. LIMPIAR DUPLICADOS Y ORDENAR POR MONTO
         // ============================================
-        $montos = array_unique($montos);
-        sort($montos);
+        $montos_unicos = [];
+        $montos_vistos = [];
+
+        foreach ($montos as $m) {
+            if (!in_array($m['monto'], $montos_vistos)) {
+                $montos_unicos[] = $m;
+                $montos_vistos[] = $m['monto'];
+            }
+        }
+
+        // Ordenar por monto ascendente
+        usort($montos_unicos, function($a, $b) {
+            return $a['monto'] - $b['monto'];
+        });
 
         // ============================================
-        // 6. LIMITAR A MÁXIMO DE OPCIONES
+        // 6. SELECCIONAR OPCIONES REPRESENTATIVAS
         // ============================================
-        if (count($montos) > $max_opciones) {
-            // Mantener el mínimo, el máximo y algunos intermedios
-            $primeros = array_slice($montos, 0, 3);
-            $ultimos = array_slice($montos, -3);
-            $medios = [];
+        if (count($montos_unicos) > $max_opciones) {
+            // Si tenemos más opciones de las permitidas, seleccionar las más representativas
 
-            if (count($montos) > 6) {
-                $medio = array_slice($montos, 3, count($montos) - 6);
-                if (!empty($medio)) {
-                    $medios = array_slice($medio, 0, 2);
+            // Siempre incluir el primer elemento (monto mínimo)
+            $seleccionados = [];
+            $total = count($montos_unicos);
+
+            // Agregar primeros 3
+            for ($i = 0; $i < min(3, $total); $i++) {
+                $seleccionados[] = $montos_unicos[$i];
+            }
+
+            // Agregar algunos del medio
+            if ($total > 6) {
+                $medio_inicio = (int) ($total * 0.3);
+                $medio_fin = (int) ($total * 0.7);
+
+                for ($i = $medio_inicio; $i <= $medio_fin && count($seleccionados) < $max_opciones - 3; $i += max(1, (int) (($medio_fin - $medio_inicio) / 3))) {
+                    if (!in_array($montos_unicos[$i]['monto'], array_column($seleccionados, 'monto'))) {
+                        $seleccionados[] = $montos_unicos[$i];
+                    }
                 }
             }
 
-            $montos = array_unique(array_merge($primeros, $medios, $ultimos));
-            sort($montos);
+            // Agregar últimos 3
+            for ($i = max(0, $total - 3); $i < $total; $i++) {
+                if (!in_array($montos_unicos[$i]['monto'], array_column($seleccionados, 'monto'))) {
+                    $seleccionados[] = $montos_unicos[$i];
+                }
+            }
+
+            // Asegurar que el máximo esté incluido
+            $maximo = end($montos_unicos);
+            if (!in_array($maximo['monto'], array_column($seleccionados, 'monto'))) {
+                $seleccionados[] = $maximo;
+            }
+
+            // Ordenar nuevamente
+            usort($seleccionados, function($a, $b) {
+                return $a['monto'] - $b['monto'];
+            });
+
+            $montos_unicos = $seleccionados;
         }
 
-        return $montos;
-    }
-}
-
-if (!function_exists('getPlazosDisponibles')) {
-    /**
-     * OBTENER PLAZOS DISPONIBLES PARA PRÉSTAMOS
-     *
-     * @return array Lista de plazos disponibles (en quincenas)
-     *
-     * @example
-     * getPlazosDisponibles() // [2] - Solo 2 quincenas
-     */
-    function getPlazosDisponibles()
-    {
-        // Solo permitimos 2 quincenas
-        return [1,2];
-    }
-}
-
-if (!function_exists('getMontoMaximoSugerido')) {
-    /**
-     * OBTENER EL MONTO MÁXIMO SUGERIDO (REDONDEADO)
-     *
-     * @param int $limite_disponible Límite disponible
-     * @return int Monto máximo redondeado
-     */
-    function getMontoMaximoSugerido($limite_disponible)
-    {
-        // Redondear a la decena más cercana
-        return round($limite_disponible / 10) * 10;
+        return $montos_unicos;
     }
 }
 

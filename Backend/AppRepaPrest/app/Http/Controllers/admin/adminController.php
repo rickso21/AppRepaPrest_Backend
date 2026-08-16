@@ -1,11 +1,15 @@
 <?php
 
-namespace App\Http\Controllers\AsesorPrestamo;
+namespace App\Http\Controllers\admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\prestamo\AsesorPrestamoRequest;
+use App\Http\Requests\aprobar\aprobarRequest;
+use App\Http\Requests\login\registerAdminRequest;
 use App\Models\Prestamo;
 use App\Models\Pago;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use App\Models\Grupo;
 use App\Models\LineaCredito;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,128 +19,76 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\File;
 
-class AsesorController extends Controller
+class adminController extends Controller
 {
-    /**
-     * CONSULTAR ESTADO DE CUENTA DEL PRÉSTAMO (ASESOR)
-     */
-    public function consultarEstadoCuenta(Request $request)
+
+ // FUNCION PARA GENERAR USUARIO QUE APRUEBA PRESTAMOS
+    public function index(registerAdminRequest $request)
     {
-        try {
-            $user_token = $request->user();
-
-            if (!$user_token) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Usuario no autenticado'
-                ], 401);
-            }
-
-            $prestamo_id = $request->prestamo_id;
-            $usuario_id = $request->usuario_id;
-
-            $query = Prestamo::with(['pagos' => function($query) {
-                $query->orderBy('fecha_pago', 'desc');
-            }]);
-
-            if ($prestamo_id) {
-                $query->where('id', $prestamo_id);
-            } elseif ($usuario_id) {
-                $query->where('usuario_id', $usuario_id);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Debe proporcionar prestamo_id o usuario_id'
-                ], 400);
-            }
-
-            $prestamo = $query->first();
-
-            if (!$prestamo) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Préstamo no encontrado'
-                ], 404);
-            }
-
-            $total_pagado = $prestamo->pagos->sum('monto_pagado');
-            $deuda_actual = $prestamo->monto_restante ?? $prestamo->monto_total_pagar;
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'prestamo' => [
-                        'id' => $prestamo->id,
-                        'folio' => $prestamo->folio,
-                        'usuario_id' => $prestamo->usuario_id,
-                        'monto_inicial' => $prestamo->monto_solicitado,
-                        'monto_total' => $prestamo->monto_total_pagar,
-                        'monto_pagado' => $total_pagado,
-                        'monto_restante' => $deuda_actual,
-                        'numero_pagos' => $prestamo->numero_pagos,
-                        'pagos_realizados' => $prestamo->pagos_realizados ?? 0,
-                        'pagos_pendientes' => $prestamo->numero_pagos - ($prestamo->pagos_realizados ?? 0),
-                        'estado' => getEstadoTexto($prestamo->estado_prestamo_id),
-                        'porcentaje_avance' => calcularPorcentajePagado($prestamo),
-                        'fecha_solicitud' => $prestamo->fecha_solicitud,
-                        'fecha_aprobacion' => $prestamo->fecha_aprobacion,
-                        'fecha_desembolso' => $prestamo->fecha_desembolso,
-                        'fecha_activacion' => $prestamo->fecha_activacion,
-                        'fecha_liquidacion' => $prestamo->fecha_liquidacion,
-                        'fecha_ultimo_pago' => $prestamo->fecha_ultimo_pago,
-                        'linea_credito_id' => $prestamo->linea_credito_id
-                    ],
-                    'historial_pagos' => $prestamo->pagos->map(function($pago) {
-                        return [
-                            'id' => $pago->id,
-                            'monto' => $pago->monto_pagado,
-                            'tipo' => $pago->tipo_pago,
-                            'es_adelantado' => $pago->es_adelantado ?? false,
-                            'fecha' => $pago->fecha_pago,
-                            'referencia' => $pago->referencia,
-                            'observaciones' => $pago->observaciones,
-                            'saldo_restante' => $pago->monto_restante,
-                            'metodo_pago' => $pago->metodo_pago ?? 'efectivo',
-                            'registrado_por' => $pago->usuario_registro
-                        ];
-                    })
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            Log::error('Error en consultarEstadoCuenta (Asesor)', [
-                'usuario_id' => $user_token->id ?? null,
-                'error' => $e->getMessage()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al consultar el estado de cuenta',
-                'error' => $e->getMessage()
-            ], 500);
+        if ($request->codigo != env('CODIGO_SEGURIDAD')) {
+            return response()->json(['res' => false, 'msg' => 'No es posible generar el usuario'], 401);
         }
+        $resp=['res' => false, 'msg' => 'No puede generarse el usuario sin telefono o email'];
+        $status_resp = 400;
+        if ($request->email == null && $request->telefono == null) {
+            return response()->json($resp, $status_resp);
+        }
+        $user = new User();
+        $user->nombre = $request->name;
+        $user->apellido_p = $request->apellido_p;
+        $user->apellido_m = $request->apellido_m;
+        $user->email = $request->email;
+        $user->password = Hash::make($request->password);
+        $user->telefono = $request->telefono;
+        $user->rol_id = 3;
+        $user->status_id = 1;
+        $resp['msg'] = "Se genero el usuario con Exito";
+        $status_resp = 201;
+        try {
+            $user->save();
+            $grupo = new Grupo();
+            $grupo->code = "externo";
+            $grupo->group_name = $request->name_group;
+            $grupo->user_leader_id = $user->id;
+            $grupo->status = 1;
+            $grupo->save();
+            $user->grupo_id = $grupo->id;
+            $user->save();
+        } catch (\Throwable $th) {
+            $resp['msg'] = $th->getMessage();
+            $status_resp = 409;
+        }
+        return response()->json($resp, $status_resp);
     }
 
  /**
      * ACTUALIZAR ESTADO DEL PRÉSTAMO CON GENERACIÓN AUTOMÁTICA DE PDF
      */
-    public function actualizarEstadoPrestamo(AsesorPrestamoRequest $request)
+    public function aprobar_prestamo(aprobarRequest $request, int $id)
     {
         try {
             $user_token = $request->user();
 
-            if (!$user_token) {
+            if ($user_token->rol_id != 3) {
                 return response()->json([
-                    'success' => false,
-                    'message' => 'Usuario no autenticado'
+                    'res' => false,
+                    'msg' => 'Usuario no autenticado'
                 ], 401);
             }
 
             // Buscar préstamo activo
-            $prestamo = Prestamo::where('usuario_id', $request->usuario_id)
+
+            /*
+            $prestamo = Prestamo::where('id', $id)
+                ->where('usuario_id', $request->usuario_id)
                 ->whereNotIn('estado_prestamo_id', [3, 4])
                 ->orderBy('id', 'desc')
                 ->first();
+
+                */
+
+
+                    $prestamo = Prestamo::find($id);
 
             if (!$prestamo) {
                 return response()->json([
@@ -567,9 +519,8 @@ public function descargarPdfPrestamo($prestamo_id, $tipo)
     }
 }
 
-    /**
-     * LISTAR TODOS LOS PRÉSTAMOS (ASESOR)
-     */
+    /*
+
     public function listarPrestamos(Request $request)
     {
         try {
@@ -645,6 +596,143 @@ public function descargarPdfPrestamo($prestamo_id, $tipo)
             ], 500);
         }
     }
+*/
+
+      /**
+     * CONSULTAR ESTADO DE CUENTA DEL PRÉSTAMO
+     */
+    public function consultarEstadoCuenta(Request $request)
+    {
+        try {
+            $user_token = $request->user();
+
+            if ($user_token->rol_id != 3) {
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'Usuario no autenticado'
+                ], 401);
+            }
+
+            $prestamo_id = $request->prestamo_id;
+            $usuario_id = $request->usuario_id;
+
+            $query = Prestamo::with(['pagos' => function($query) {
+                $query->orderBy('fecha_pago', 'desc');
+            }]);
+
+            if ($prestamo_id) {
+                $query->where('id', $prestamo_id);
+            } elseif ($usuario_id) {
+                $query->where('usuario_id', $usuario_id);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Debe proporcionar prestamo_id o usuario_id'
+                ], 400);
+            }
+
+            $prestamo = $query->first();
+
+            if (!$prestamo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Préstamo no encontrado'
+                ], 404);
+            }
+
+            $total_pagado = $prestamo->pagos->sum('monto_pagado');
+            $deuda_actual = $prestamo->monto_restante ?? $prestamo->monto_total_pagar;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'prestamo' => [
+                        'id' => $prestamo->id,
+                        'folio' => $prestamo->folio,
+                        'usuario_id' => $prestamo->usuario_id,
+                        'monto_inicial' => $prestamo->monto_solicitado,
+                        'monto_total' => $prestamo->monto_total_pagar,
+                        'monto_pagado' => $total_pagado,
+                        'monto_restante' => $deuda_actual,
+                        'numero_pagos' => $prestamo->numero_pagos,
+                        'pagos_realizados' => $prestamo->pagos_realizados ?? 0,
+                        'pagos_pendientes' => $prestamo->numero_pagos - ($prestamo->pagos_realizados ?? 0),
+                        'estado' => getEstadoTexto($prestamo->estado_prestamo_id),
+                        'porcentaje_avance' => calcularPorcentajePagado($prestamo),
+                        'fecha_solicitud' => $prestamo->fecha_solicitud,
+                        'fecha_aprobacion' => $prestamo->fecha_aprobacion,
+                        'fecha_desembolso' => $prestamo->fecha_desembolso,
+                        'fecha_activacion' => $prestamo->fecha_activacion,
+                        'fecha_liquidacion' => $prestamo->fecha_liquidacion,
+                        'fecha_ultimo_pago' => $prestamo->fecha_ultimo_pago,
+                        'linea_credito_id' => $prestamo->linea_credito_id
+                    ],
+                    'historial_pagos' => $prestamo->pagos->map(function($pago) {
+                        return [
+                            'id' => $pago->id,
+                            'monto' => $pago->monto_pagado,
+                            'tipo' => $pago->tipo_pago,
+                            'es_adelantado' => $pago->es_adelantado ?? false,
+                            'fecha' => $pago->fecha_pago,
+                            'referencia' => $pago->referencia,
+                            'observaciones' => $pago->observaciones,
+                            'saldo_restante' => $pago->monto_restante,
+                            'metodo_pago' => $pago->metodo_pago ?? 'efectivo',
+                            'registrado_por' => $pago->usuario_registro
+                        ];
+                    })
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error en consultarEstadoCuenta (Asesor)', [
+                'usuario_id' => $user_token->id ?? null,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al consultar el estado de cuenta',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function ve_prestamos(Request $request)
+    {
+        $user_token = $request->user();
+
+        if ($user_token->rol_id != 3) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no autenticado'
+            ], 401);
+        }
+
+        $prestamos = Prestamo::whereIn('estado_prestamo_id', [1, 2, 3])->get(); // Aprobado o Rechazado
+        $listado = [];
+        foreach ($prestamos as $prestamo) {
+            $usuario = $prestamo->usuario->nombre . ' ' . $prestamo->usuario->apellido_p . ' ' . $prestamo->usuario->apellido_m;
+            $monto_solicitado = $prestamo->monto_solicitado;
+            $folio = $prestamo->folio;
+            $monto_total_pagar = $prestamo->monto_total_pagar;
+            $numero_pagos = $prestamo->numero_pagos;
+            $pagos_realizados = $prestamo->pagos_realizados;
+
+            $listado= [
+                'usuario' => $usuario,
+                'monto_solicitado' => $monto_solicitado,
+                'folio' => $folio,
+                'monto_total_pagar' => $monto_total_pagar,
+                'numero_pagos' => $numero_pagos,
+                'pagos_realizados' => $pagos_realizados
+            ];
+            // var_dump($listado);
+        }
+        return response()->json($listado, 200);
+    }
+
 
 
 }
