@@ -130,7 +130,7 @@ class pagoController extends Controller
                 $isSandbox = config('app.env') !== 'production';
 
                 $notificationUrl = $isSandbox
-                    ? 'https://thing-climatic-driller.ngrok-free.dev/verificar_pago'
+                    ? 'https://deliverysobreruedas.com/verificar_pago'
                     : 'https://tudominio.com/api/webhooks/mercadopago';
 
                 $preferenceData = [
