@@ -11,7 +11,7 @@ use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-
+use App\Services\BrevoService;
 
 class pagoController extends Controller
 {
@@ -298,7 +298,7 @@ class pagoController extends Controller
         $isSandbox = config('app.env') !== 'production';
 
         $notificationUrl = $isSandbox
-            ? 'https://thing-climatic-driller.ngrok-free.dev/verificar_pago'
+            ? 'https://deliverysobreruedas.com/verificar_pago'
             : 'https://tudominio.com/api/webhooks/mercadopago';
 
         $preferenceData = [
@@ -449,7 +449,8 @@ class pagoController extends Controller
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
-                $response = curl_exec($ch);
+
+                 $response = curl_exec($ch);
                 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $error    = curl_error($ch);
                 curl_close($ch);
@@ -463,45 +464,96 @@ class pagoController extends Controller
                 }
 
                 $pago_mp = json_decode($response, true);
+                $status = $pago_mp['status'] ?? null;
 
+                // LOG DE LA RESPUESTA DE MERCADO PAGO
+                \Log::info('RESPUESTA DE MERCADO PAGO', [
+                    'payment_id' => $payment_id,
+                    'status' => $status,
+                    'external_reference' => $pago_mp['external_reference'] ?? null,
+                    'preference_id' => $pago_mp['preference_id'] ?? null,
+                    'transaction_amount' => $pago_mp['transaction_amount'] ?? null
+                ]);
+
+                // BUSCAR EL PAGO - PRIORIDAD CORRECTA
+                $pago = null;
+
+                // 1. PRIMERO: Por external_reference (más confiable)
                 $pago_id = $pago_mp['external_reference'] ?? null;
-                $pago    = null;
-
                 if ($pago_id) {
                     $pago = Pago::find($pago_id);
+                    if ($pago) {
+                        \Log::info('PAGO ENCONTRADO POR external_reference', [
+                            'pago_id' => $pago->id,
+                            'prestamo_id' => $pago->prestamo_id
+                        ]);
+                    }
                 }
 
+                // 2. SEGUNDO: Por preference_id
                 if (!$pago) {
-                    $pago = Pago::where('preference_id', $pago_mp['preference_id'] ?? null)
-                        ->where('status', 0)
-                        ->first();
-                }
-                if (!$pago) {
-                    return response()->json(['message' => 'Pago no encontrado'], 404);
+                    $preference_id = $pago_mp['preference_id'] ?? null;
+                    if ($preference_id) {
+                        $pago = Pago::where('preference_id', $preference_id)
+                            ->where('status', 0)
+                            ->first();
+                        if ($pago) {
+                            \Log::info('PAGO ENCONTRADO POR preference_id', [
+                                'pago_id' => $pago->id,
+                                'preference_id' => $preference_id
+                            ]);
+                        }
+                    }
                 }
 
-                if (! $pago) {
+                // 3. TERCERO: Por monto y fecha (solo si hay coincidencia exacta)
+                if (!$pago) {
                     $monto = $pago_mp['transaction_amount'] ?? null;
                     $fecha = $pago_mp['date_created'] ?? null;
 
                     if ($monto && $fecha) {
                         $pago = Pago::where('monto_pagado', $monto)
                             ->where('status', 0)
-                            ->where('fecha_pago', '>=', Carbon::parse($fecha)->subMinutes(5))
-                            ->where('fecha_pago', '<=', Carbon::parse($fecha)->addMinutes(5))
+                            ->where('fecha_pago', '>=', Carbon::parse($fecha)->subMinutes(10))
+                            ->where('fecha_pago', '<=', Carbon::parse($fecha)->addMinutes(10))
                             ->first();
+                        if ($pago) {
+                            \Log::info('PAGO ENCONTRADO POR monto y fecha', [
+                                'pago_id' => $pago->id,
+                                'monto' => $monto
+                            ]);
+                        }
                     }
                 }
 
-                if (! $pago) {
-                    $pago = Pago::where('status', 0)
-                        ->orderBy('id', 'desc')
-                        ->first();
-                }
+                 if (!$pago) {
+                \Log::warning('PAGO NO ENCONTRADO', [
+                    'external_reference' => $pago_mp['external_reference'] ?? null,
+                    'preference_id' => $pago_mp['preference_id'] ?? null,
+                    'payment_id' => $payment_id
+                ]);
+                return response()->json(['message' => 'Pago no encontrado'], 404);
+            }
 
-                if (! $pago) {
-                    return response()->json(['message' => 'Pago no encontrado'], 404);
-                }
+              if ($pago->status == 1) {
+                \Log::info('PAGO YA CONFIRMADO ANTERIORMENTE', [
+                    'pago_id' => $pago->id,
+                    'prestamo_id' => $pago->prestamo_id
+                ]);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pago ya confirmado anteriormente'
+                ], 200);
+            }
+
+            // LOG DEL PAGO ENCONTRADO
+            \Log::info('PAGO ENCONTRADO PARA PROCESAR', [
+                'pago_id' => $pago->id,
+                'prestamo_id' => $pago->prestamo_id,
+                'monto_pagado' => $pago->monto_pagado,
+                'status_actual' => $pago->status,
+                'status_mp' => $status
+            ]);
 
                 $status = $pago_mp['status'] ?? null;
 
@@ -619,10 +671,15 @@ class pagoController extends Controller
 
             return response()->json(['message' => 'Notificación procesada'], 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error procesando webhook',
-            ], 500);
+           \Log::error('ERROR EN WEBHOOK', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error procesando webhook',
+        ], 500);
         }
     }
 
