@@ -536,11 +536,39 @@ class pagoController extends Controller
                                 $asesor = \App\Models\User::find($pago->usuario_registro);
                             }
 
+
                             $pdfResult = $this->generarPdfLiquidacionWebhook($prestamo, $asesor);
+
+
 
                             if ($pdfResult['success']) {
                                 $pdfGenerado = true;
-                                $rutaPdf     = $pdfResult['ruta'];
+                                $rutaPdf = $pdfResult['ruta'];
+                                $absolutePath = $pdfResult['absolute_path'] ?? null;
+                            }
+
+
+                             if ($absolutePath && file_exists($absolutePath)) {
+                                try {
+                                    $brevoService = new \App\Services\BrevoService();
+                                    $brevoService->sendLoanLiquidatedEmail($prestamo, $prestamo->usuario, $absolutePath);
+
+                                    \Log::info('Correo de liquidación enviado desde webhook', [
+                                        'folio' => $prestamo->folio,
+                                        'pago_id' => $pago->id
+                                    ]);
+                                } catch (\Exception $e) {
+                                    \Log::error('Error al enviar correo de liquidación desde webhook', [
+                                        'folio' => $prestamo->folio,
+                                        'error' => $e->getMessage()
+                                    ]);
+                                }
+                            } else {
+                                \Log::warning('No se pudo enviar correo de liquidación desde webhook', [
+                                    'folio' => $prestamo->folio,
+                                    'absolute_path' => $absolutePath,
+                                    'pdf_generado' => $pdfGenerado
+                                ]);
                             }
                         }
 
@@ -662,9 +690,11 @@ class pagoController extends Controller
 
             return [
                 'success' => true,
-                'ruta'    => $dbPath,
-                'nombre'  => $filename,
-                'url'     => asset("storage/prestamos/{$folder}/" . $filename),
+            'ruta' => $dbPath,
+            'nombre' => $filename,
+            'folder' => $folder,
+            'absolute_path' => $absolutePath,
+            'url' => asset("storage/prestamos/{$folder}/" . $filename),
             ];
         } catch (\Exception $e) {
             return [
