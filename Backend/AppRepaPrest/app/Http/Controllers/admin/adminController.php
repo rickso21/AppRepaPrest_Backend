@@ -61,7 +61,7 @@ class adminController extends Controller
         return response()->json($resp, $status_resp);
     }
 
- /**
+     /**
      * ACTUALIZAR ESTADO DEL PRÉSTAMO CON GENERACIÓN AUTOMÁTICA DE PDF
      */
     public function aprobar_prestamo(aprobarRequest $request, int $id)
@@ -69,38 +69,28 @@ class adminController extends Controller
         try {
             $user_token = $request->user();
 
+            // Validar que sea asesor (rol_id = 3)
             if ($user_token->rol_id != 3) {
                 return response()->json([
                     'res' => false,
-                    'msg' => 'Usuario no autenticado'
+                    'msg' => 'Usuario no autorizado para esta acción'
                 ], 401);
             }
 
-            // Buscar préstamo activo
-
-            /*
-            $prestamo = Prestamo::where('id', $id)
-                ->where('usuario_id', $request->usuario_id)
-                ->whereNotIn('estado_prestamo_id', [3, 4])
-                ->orderBy('id', 'desc')
-                ->first();
-
-                */
-
-
-                    $prestamo = Prestamo::find($id);
+            // Buscar el préstamo por ID
+            $prestamo = Prestamo::find($id);
 
             if (!$prestamo) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'El usuario no tiene un préstamo activo para modificar'
+                    'message' => 'Préstamo no encontrado'
                 ], 404);
             }
 
             $estado_actual = $prestamo->estado_prestamo_id;
             $nuevo_estado = $request->estado_prestamo_id;
 
-            // Validar transiciones
+            // Validar transiciones de estado
             if (!validarTransicionEstado($estado_actual, $nuevo_estado)) {
                 return response()->json([
                     'success' => false,
@@ -124,53 +114,103 @@ class adminController extends Controller
 
             $linea_credito = LineaCredito::find($prestamo->linea_credito_id);
             $credito_reactivado = false;
-
-            // Variable para controlar qué PDF generar
             $pdfGenerado = false;
             $tipoPdf = null;
             $rutaPdf = null;
+            $folderPdf = null;
+            $fechas_calculadas = [];
 
             // ============================================
             // PROCESAR SEGÚN EL NUEVO ESTADO
             // ============================================
             switch ($nuevo_estado) {
-                case 2: // Aprobado
+
+                case 2: // APROBADO
                     // ============================================
-                    // FECHAS DE APROBACIÓN Y DESEMBOLSO
+                    // 1. CALCULAR FECHAS REALES DEL PRÉSTAMO
                     // ============================================
                     $fecha_aprobacion = now();
-                    $fecha_desembolso = $fecha_aprobacion->copy();
+                    $fecha_desembolso = $fecha_aprobacion->copy(); // Se deposita el mismo día
+                    $fecha_activacion = $fecha_desembolso->copy();
 
+                    // Fecha del primer pago (15 días después del desembolso)
+                    $fecha_primer_pago = $fecha_desembolso->copy()->addDays(15);
+
+                    // Fecha del último pago (Número de pagos * 15 días)
+                    $numero_pagos = $prestamo->numero_pagos;
+                    $fecha_ultimo_pago = $fecha_desembolso->copy()->addDays($numero_pagos * 15);
+
+                    // ============================================
+                    // 2. ASIGNAR FECHAS AL MODELO
+                    // ============================================
                     $prestamo->fecha_aprobacion = $fecha_aprobacion;
                     $prestamo->fecha_desembolso = $fecha_desembolso;
-                    $prestamo->fecha_activacion = $fecha_desembolso;
-                    $prestamo->fecha_primer_pago = $fecha_desembolso->copy()->addDays(15);
-                    $prestamo->estado_prestamo_id = 2;
+                    $prestamo->fecha_activacion = $fecha_activacion;
+                    $prestamo->fecha_primer_pago = $fecha_primer_pago;
+                    $prestamo->fecha_ultimo_pago = $fecha_ultimo_pago;
+                    $prestamo->estado_prestamo_id = 2; // Aprobado
 
-                    // Actualizar línea de crédito
+                    // Actualizar línea de crédito a "En uso"
                     if ($linea_credito) {
                         $linea_credito->estatus_id = 2; // En uso
                         $linea_credito->save();
                     }
 
-                    // GENERAR PDF DE APROBACIÓN
+                    // Guardar fechas para la respuesta JSON
+                    $fechas_calculadas = [
+                        'fecha_aprobacion' => $fecha_aprobacion->format('Y-m-d H:i:s'),
+                        'fecha_desembolso' => $fecha_desembolso->format('Y-m-d'),
+                        'fecha_activacion' => $fecha_activacion->format('Y-m-d'),
+                        'fecha_primer_pago' => $fecha_primer_pago->format('Y-m-d'),
+                        'fecha_ultimo_pago' => $fecha_ultimo_pago->format('Y-m-d'),
+                    ];
+
+                    // ============================================
+                    // 3. GENERAR PDF DE APROBACIÓN
+                    // ============================================
                     $pdfData = $this->generarPdfPrestamo($prestamo, 'aprobacion', $user_token);
                     $pdfGenerado = true;
                     $tipoPdf = 'aprobacion';
                     $rutaPdf = $pdfData['ruta'] ?? null;
                     $folderPdf = $pdfData['folder'] ?? 'aprobacion';
-                    break;
+                    $absolutePath = $pdfData['absolute_path'] ?? null;
 
-                    Log::info('Préstamo aprobado y PDF generado', [
+
+                // ============================================
+                    // AGREGAR ESTO: ENVÍO DE CORREO AL USUARIO CON PDF
+                    // ============================================
+                    if ($absolutePath && file_exists($absolutePath)) {
+                    try {
+                            $brevoService = new \App\Services\BrevoService();
+                            $brevoService->sendLoanApprovalEmail($prestamo, $prestamo->usuario, $absolutePath);
+                        } catch (\Exception $e) {
+                            \Log::error('Error al enviar correo de aprobación al usuario', [
+                                'folio' => $prestamo->folio,
+                                'error' => $e->getMessage()
+                            ]);
+                            // El flujo principal NO se interrumpe
+                        }
+                    } else {
+                        \Log::warning('No se pudo enviar el correo porque el PDF no existe', [
+                            'folio' => $prestamo->folio,
+                            'ruta_pdf' => $rutaPdf
+                        ]);
+                    }
+
+
+
+
+                    \Log::info('Préstamo aprobado y PDF generado', [
                         'prestamo_id' => $prestamo->id,
                         'folio' => $prestamo->folio,
-                        'usuario_id' => $request->usuario_id,
+                        'usuario_id' => $prestamo->usuario_id,
                         'asesor_id' => $user_token->id,
-                        'pdf_generado' => $pdfGenerado
+                        'pdf_generado' => $pdfGenerado,
+                        'fecha_primer_pago' => $fecha_primer_pago->format('Y-m-d')
                     ]);
                     break;
 
-                case 3: // Pagado
+                case 3: // PAGADO
                     // ============================================
                     // VALIDAR QUE EL PRÉSTAMO ESTÉ APROBADO
                     // ============================================
@@ -184,7 +224,6 @@ class adminController extends Controller
                         ], 400);
                     }
 
-                    // Verificar fecha de desembolso
                     if (!$prestamo->fecha_desembolso) {
                         return response()->json([
                             'success' => false,
@@ -212,17 +251,36 @@ class adminController extends Controller
                     $tipoPdf = 'liquidacion';
                     $rutaPdf = $pdfData['ruta'] ?? null;
                     $folderPdf = $pdfData['folder'] ?? 'liquidacion';
+                    $absolutePath = $pdfData['absolute_path'] ?? null;
 
-                    Log::info('Préstamo liquidado y PDF generado', [
+                    // ============================================
+                    // ENVÍO DE CORREO DE LIQUIDACIÓN AL USUARIO
+                    // ============================================
+                     if ($absolutePath && file_exists($absolutePath)) {
+                    try {
+                            $brevoService = new \App\Services\BrevoService();
+                            $brevoService->sendLoanLiquidatedEmail($prestamo, $prestamo->usuario, $absolutePath);
+                        } catch (\Exception $e) {
+                            \Log::error('Error al enviar correo de liquidación al usuario', [
+                                'folio' => $prestamo->folio, 'error' => $e->getMessage()
+                            ]);
+                        }
+                    } else {
+                        \Log::warning('No se pudo enviar correo de liquidación porque el PDF no existe', [
+                            'folio' => $prestamo->folio, 'ruta_pdf' => $rutaPdf
+                        ]);
+                    }
+
+                    \Log::info('Préstamo liquidado y PDF generado', [
                         'prestamo_id' => $prestamo->id,
                         'folio' => $prestamo->folio,
-                        'usuario_id' => $request->usuario_id,
+                        'usuario_id' => $prestamo->usuario_id,
                         'asesor_id' => $user_token->id,
                         'pdf_generado' => $pdfGenerado
                     ]);
                     break;
 
-                case 4: // Rechazado
+                case 4: // RECHAZADO
                     // Rechazar préstamo
                     $prestamo->estado_prestamo_id = 4;
                     $prestamo->motivo_rechazo = $request->motivo_rechazo ?? 'No especificado';
@@ -233,6 +291,7 @@ class adminController extends Controller
                         $prestamo->fecha_desembolso = null;
                         $prestamo->fecha_activacion = null;
                         $prestamo->fecha_primer_pago = null;
+                        $prestamo->fecha_ultimo_pago = null;
                     }
 
                     // Reactivar línea de crédito
@@ -242,18 +301,37 @@ class adminController extends Controller
                         $credito_reactivado = true;
                     }
 
-                    //  GENERAR PDF DE RECHAZO
-                   $pdfData = $this->generarPdfPrestamo($prestamo, 'rechazo', $user_token);
+                    // GENERAR PDF DE RECHAZO
+                    $pdfData = $this->generarPdfPrestamo($prestamo, 'rechazo', $user_token);
                     $pdfGenerado = true;
                     $tipoPdf = 'rechazo';
                     $rutaPdf = $pdfData['ruta'] ?? null;
                     $folderPdf = $pdfData['folder'] ?? 'rechazo';
-                    break;
+                    $absolutePath = $pdfData['absolute_path'] ?? null;
 
-                    Log::info('Préstamo rechazado y PDF generado', [
+                     // ============================================
+                    // ENVÍO DE CORREO DE RECHAZO AL USUARIO
+                    // ============================================
+                    if ($absolutePath && file_exists($absolutePath)) {
+                        try {
+                            $brevoService = new \App\Services\BrevoService();
+                            $brevoService->sendLoanRejectedEmail($prestamo, $prestamo->usuario, $absolutePath);
+                        } catch (\Exception $e) {
+                            \Log::error('Error al enviar correo de rechazo al usuario', [
+                                'folio' => $prestamo->folio, 'error' => $e->getMessage()
+                            ]);
+                        }
+                    } else {
+                        \Log::warning('No se pudo enviar correo de rechazo porque el PDF no existe', [
+                            'folio' => $prestamo->folio, 'ruta_pdf' => $rutaPdf
+                        ]);
+                    }
+
+
+                    \Log::info('Préstamo rechazado y PDF generado', [
                         'prestamo_id' => $prestamo->id,
                         'folio' => $prestamo->folio,
-                        'usuario_id' => $request->usuario_id,
+                        'usuario_id' => $prestamo->usuario_id,
                         'asesor_id' => $user_token->id,
                         'motivo' => $request->motivo_rechazo ?? 'No especificado',
                         'pdf_generado' => $pdfGenerado
@@ -270,76 +348,63 @@ class adminController extends Controller
             }
 
             // ============================================
-            // GUARDAR CAMBIOS
+            // GUARDAR CAMBIOS EN LA BD
             // ============================================
             $prestamo->save();
 
             // ============================================
-            // PREPARAR RESPUESTA
+            // PREPARAR RESPUESTA ENRIQUECIDA
             // ============================================
-            return response()->json([
-                'success' => true,
-                'message' => $nuevo_estado == 3 ? 'Préstamo marcado como pagado y línea de crédito reactivada' : 'Estado del préstamo actualizado correctamente',
-                'data' => [
-                    'prestamo' => [
-                        'id' => $prestamo->id,
-                        'folio' => $prestamo->folio,
-                        'usuario_id' => $prestamo->usuario_id,
-                        'monto_solicitado' => (float) $prestamo->monto_solicitado,
-                        'monto_total' => (float) $prestamo->monto_total_pagar,
-                        'monto_restante' => (float) $prestamo->monto_restante,
-                        'numero_pagos' => $prestamo->numero_pagos,
-                        'pagos_realizados' => $prestamo->pagos_realizados ?? 0,
-                    ],
-                    'estado' => [
-                        'anterior' => $estado_actual,
-                        'anterior_texto' => getEstadoTexto($estado_actual),
-                        'nuevo' => $nuevo_estado,
-                        'nuevo_texto' => getEstadoTexto($nuevo_estado)
-                    ],
-                    'fechas' => [
-                        'fecha_aprobacion' => $prestamo->fecha_aprobacion instanceof \Carbon\Carbon
-                            ? $prestamo->fecha_aprobacion->format('Y-m-d H:i:s')
-                            : $prestamo->fecha_aprobacion,
-                        'fecha_desembolso' => $prestamo->fecha_desembolso instanceof \Carbon\Carbon
-                            ? $prestamo->fecha_desembolso->format('Y-m-d')
-                            : $prestamo->fecha_desembolso,
-                        'fecha_activacion' => $prestamo->fecha_activacion instanceof \Carbon\Carbon
-                            ? $prestamo->fecha_activacion->format('Y-m-d')
-                            : $prestamo->fecha_activacion,
-                        'fecha_primer_pago' => $prestamo->fecha_primer_pago instanceof \Carbon\Carbon
-                            ? $prestamo->fecha_primer_pago->format('Y-m-d')
-                            : $prestamo->fecha_primer_pago,
-                        'fecha_liquidacion' => $prestamo->fecha_liquidacion instanceof \Carbon\Carbon
-                            ? $prestamo->fecha_liquidacion->format('Y-m-d H:i:s')
-                            : $prestamo->fecha_liquidacion,
-                    ],
-                    'linea_credito' => $linea_credito ? [
-                        'id' => $linea_credito->id,
-                        'limite_aprobado' => (int) $linea_credito->limite_aprobado,
-                        'limite_disponible' => (int) $linea_credito->limite_disponible,
-                        'estatus_id' => $linea_credito->estatus_id,
-                        'estatus_texto' => $linea_credito->estatus_id == 1 ? 'Activa (Disponible)' : 'En Uso',
-                        'credito_reactivado' => $credito_reactivado
-                    ] : null,
-                    // INCLUIR INFORMACIÓN DEL PDF GENERADO
-                   'pdf' => $pdfGenerado ? [
+            $response_data = [
+                'prestamo' => [
+                    'id' => $prestamo->id,
+                    'folio' => $prestamo->folio,
+                    'usuario_id' => $prestamo->usuario_id,
+                    'monto_solicitado' => (float) $prestamo->monto_solicitado,
+                    'monto_total_pagar' => (float) $prestamo->monto_total_pagar,
+                    'monto_restante' => (float) $prestamo->monto_restante,
+                    'numero_pagos' => $prestamo->numero_pagos,
+                    'pagos_realizados' => $prestamo->pagos_realizados ?? 0,
+                    'pago_quincenal' => (float) $prestamo->pago_quincenal,
+                    'periodicidad' => $prestamo->periodicidad,
+                ],
+                'estado' => [
+                    'anterior' => $estado_actual,
+                    'anterior_texto' => getEstadoTexto($estado_actual),
+                    'nuevo' => $nuevo_estado,
+                    'nuevo_texto' => getEstadoTexto($nuevo_estado)
+                ],
+                'fechas' => $fechas_calculadas, // Aquí van las fechas reales calculadas
+                'linea_credito' => $linea_credito ? [
+                    'id' => $linea_credito->id,
+                    'limite_aprobado' => (int) $linea_credito->limite_aprobado,
+                    'limite_disponible' => (int) $linea_credito->limite_disponible,
+                    'estatus_id' => $linea_credito->estatus_id,
+                    'estatus_texto' => $linea_credito->estatus_id == 1 ? 'Activa (Disponible)' : 'En Uso',
+                    'credito_reactivado' => $credito_reactivado
+                ] : null,
+                'pdf' => $pdfGenerado ? [
                     'generado' => true,
                     'tipo' => $tipoPdf,
-                    'carpeta' => $folderPdf ?? null,
+                    'carpeta' => $folderPdf,
                     'ruta' => $rutaPdf,
                     'url_descarga' => $rutaPdf ? asset("storage/prestamos/{$folderPdf}/" . basename($rutaPdf)) : null
                 ] : [
                     'generado' => false
                 ],
-                    'registrado_por' => 'asesor',
-                    'asesor_id' => $user_token->id,
-                    'timestamp' => now()->format('Y-m-d H:i:s')
-                ]
+                'registrado_por' => 'asesor',
+                'asesor_id' => $user_token->id,
+                'timestamp' => now()->format('Y-m-d H:i:s')
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => $nuevo_estado == 3 ? 'Préstamo marcado como pagado y línea de crédito reactivada' : 'Estado del préstamo actualizado correctamente',
+                'data' => $response_data
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error en actualizarEstadoPrestamo (Asesor)', [
+            \Log::error('Error en aprobar_prestamo', [
                 'usuario_id' => $request->usuario_id ?? null,
                 'asesor_id' => $user_token->id ?? null,
                 'nuevo_estado' => $request->estado_prestamo_id ?? null,
@@ -349,13 +414,11 @@ class adminController extends Controller
 
             return response()->json([
                 'success' => false,
-            'message' => 'Error al actualizar el estado',
-            'error' => $e->getMessage(), // Esto mostrará el error real
-            'trace' => $e->getTraceAsString() // Esto mostrará la traza
+                'message' => 'Error al actualizar el estado',
+                'error' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor'
             ], 500);
         }
     }
-
 
  /**
  * GENERAR PDF DEL PRÉSTAMO
@@ -406,10 +469,10 @@ public function generarPdfPrestamo($prestamo, $tipo, $usuario)
         };
 
         // Ruta relativa para la BD
-        $dbPath = "public/prestamos/{$folder}/" . $filename;
+        $dbPath = "public/storage/prestamos/{$folder}/" . $filename;
 
         // Ruta absoluta para el sistema de archivos
-        $basePath = storage_path('app/public/prestamos/' . $folder);
+        $basePath = storage_path('app/public/storage/prestamos/' . $folder);
         $absolutePath = $basePath . DIRECTORY_SEPARATOR . $filename;
 
         Log::info('Ruta absoluta', [
@@ -462,6 +525,7 @@ public function generarPdfPrestamo($prestamo, $tipo, $usuario)
             'ruta' => $dbPath,
             'nombre' => $filename,
             'folder' => $folder,
+            'absolute_path' => $absolutePath,
             'url' => asset("storage/prestamos/{$folder}/" . $filename)
         ];
 

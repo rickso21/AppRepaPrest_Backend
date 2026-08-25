@@ -26,9 +26,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
     // solicita prestamo
-    Route::get('/solicita-user', [prestamoController::class, 'solicita_user']);
+    Route::get('/solicita-user', [prestamoController::class, 'solicitar_credito']);
     // 2. Generar opciones de préstamo y crear solicitud
-    Route::post('/genera-opciones', [prestamoController::class, 'genera_opciones']);
+    Route::post('/genera-opciones', [prestamoController::class, 'generar_solicitud']);
 
 
 

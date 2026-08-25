@@ -12,9 +12,10 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Support\Facades\Log;
 
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+#[Fillable(['nombre', 'apellido_p', 'apellido_m', 'email', 'password', 'token_pc', 'rol_id', 'status_id', 'telefono', 'grupo_id'])]
+#[Hidden(['password', 'remember_token', 'token_pc'])]
 #[Table('tbl_user')]
+
 
 class User extends Authenticatable
 {
@@ -64,7 +65,6 @@ class User extends Authenticatable
         });
     }
 
-    // 🔥 RELACIONES
     public function configuracionPanico()
     {
         return $this->hasOne(ConfiguracionPanico::class, 'usuario_id');

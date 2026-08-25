@@ -19,153 +19,153 @@ class prestamoController extends Controller
      * FUNCIÓN PARA GENERAR SOLICITUD DE PRÉSTAMO
      * Verifica si el usuario puede solicitar un préstamo
      */
-public function solicita_user(Request $request)
-{
-    try {
-        $user_token = $request->user();
+    public function solicitar_credito(Request $request)
+    {
+        try {
+            $user_token = $request->user();
 
-        if (! $user_token) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'Usuario no autenticado',
-            ], 401);
-        }
+            if (! $user_token) {
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'Usuario no autenticado',
+                ], 401);
+            }
 
-        // 1. VERIFICAR PRÉSTAMOS EN ESTADO SOLICITADO (1) O APROBADO (2)
-        $prestamo_pendiente_o_aprobado = Prestamo::where('usuario_id', $user_token->id)
-            ->whereIn('estado_prestamo_id', [1, 2])
-            ->exists();
-
-        if ($prestamo_pendiente_o_aprobado) {
-            $prestamo = Prestamo::where('usuario_id', $user_token->id)
+            // 1. VERIFICAR PRÉSTAMOS EN ESTADO SOLICITADO (1) O APROBADO (2)
+            $prestamo_pendiente_o_aprobado = Prestamo::where('usuario_id', $user_token->id)
                 ->whereIn('estado_prestamo_id', [1, 2])
-                ->first();
-
-            $mensaje = $prestamo->estado_prestamo_id == 1
-                ? 'El usuario ya tiene un préstamo pendiente de aprobación'
-                : 'El usuario ya tiene un préstamo aprobado pendiente de pago';
-
-            return response()->json([
-                'res'           => false,
-                'msg'           => $mensaje,
-                'estado_actual' => $prestamo->estado_prestamo_id,
-                'estado_texto'  => getEstadoTexto($prestamo->estado_prestamo_id),
-            ], 400);
-        }
-
-        // 2. BUSCAR LÍNEA DE CRÉDITO ACTIVA
-        $linea_credito = LineaCredito::where('usuario_id', $user_token->id)
-            ->where('estatus_id', 1)
-            ->first();
-
-        // 3. SI NO TIENE LÍNEA DE CRÉDITO ACTIVA, CREAR UNA NUEVA
-        if (! $linea_credito) {
-            $nuevo_limite  = 200;
-            $linea_credito = LineaCredito::create([
-                'usuario_id'        => $user_token->id,
-                'limite_aprobado'   => $nuevo_limite,
-                'limite_disponible' => $nuevo_limite,
-                'estatus_id'        => 1,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Línea de crédito creada exitosamente',
-                'data'    => [
-                    'linea_credito_id' => $linea_credito->id,
-                    'monto_aprobado'   => $nuevo_limite,
-                    'monto_disponible' => $nuevo_limite,
-                    'es_nuevo_usuario' => true,
-                ],
-            ], 200);
-        }
-
-        // 4. BUSCAR ÚLTIMO PRÉSTAMO PAGADO SIN INCREMENTO
-        $ultimo_prestamo_pagado = Prestamo::where('usuario_id', $user_token->id)
-            ->where('estado_prestamo_id', 3)
-            ->where('incremento_aplicado', 0)
-            ->orderBy('id', 'desc')
-            ->first();
-
-        // 5. SI NO TIENE PRÉSTAMOS PAGADOS PENDIENTES DE INCREMENTO
-        if (! $ultimo_prestamo_pagado) {
-            $tiene_prestamos_pagados = Prestamo::where('usuario_id', $user_token->id)
-                ->where('estado_prestamo_id', 3)
                 ->exists();
 
-            $montos_sugeridos = generarMontosSugeridos((int) $linea_credito->limite_disponible);
+            if ($prestamo_pendiente_o_aprobado) {
+                $prestamo = Prestamo::where('usuario_id', $user_token->id)
+                    ->whereIn('estado_prestamo_id', [1, 2])
+                    ->first();
 
-            // 🔥 OBTENER PLAZOS SEGÚN EL MONTO DISPONIBLE
-            $monto_disponible = (int) $linea_credito->limite_disponible;
-            $plazos_disponibles = getPlazosDisponibles($monto_disponible);
+                $mensaje = $prestamo->estado_prestamo_id == 1
+                    ? 'El usuario ya tiene un préstamo pendiente de aprobación'
+                    : 'El usuario ya tiene un préstamo aprobado pendiente de pago';
+
+                return response()->json([
+                    'res'           => false,
+                    'msg'           => $mensaje,
+                    'estado_actual' => $prestamo->estado_prestamo_id,
+                    'estado_texto'  => getEstadoTexto($prestamo->estado_prestamo_id),
+                ], 400);
+            }
+
+            // 2. BUSCAR LÍNEA DE CRÉDITO ACTIVA
+            $linea_credito = LineaCredito::where('usuario_id', $user_token->id)
+                ->where('estatus_id', 1)
+                ->first();
+
+            // 3. SI NO TIENE LÍNEA DE CRÉDITO ACTIVA, CREAR UNA NUEVA
+            if (! $linea_credito) {
+                $nuevo_limite  = 200;
+                $linea_credito = LineaCredito::create([
+                    'usuario_id'        => $user_token->id,
+                    'limite_aprobado'   => $nuevo_limite,
+                    'limite_disponible' => $nuevo_limite,
+                    'estatus_id'        => 1,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Línea de crédito creada exitosamente',
+                    'data'    => [
+                        'linea_credito_id' => $linea_credito->id,
+                        'monto_aprobado'   => $nuevo_limite,
+                        'monto_disponible' => $nuevo_limite,
+                        'es_nuevo_usuario' => true,
+                    ],
+                ], 200);
+            }
+
+            // 4. BUSCAR ÚLTIMO PRÉSTAMO PAGADO SIN INCREMENTO
+            $ultimo_prestamo_pagado = Prestamo::where('usuario_id', $user_token->id)
+                ->where('estado_prestamo_id', 3)
+                ->where('incremento_aplicado', 0)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            // 5. SI NO TIENE PRÉSTAMOS PAGADOS PENDIENTES DE INCREMENTO
+            if (! $ultimo_prestamo_pagado) {
+                $tiene_prestamos_pagados = Prestamo::where('usuario_id', $user_token->id)
+                    ->where('estado_prestamo_id', 3)
+                    ->exists();
+
+                $montos_sugeridos = generarMontosSugeridos((int) $linea_credito->limite_disponible);
+
+                // 🔥 OBTENER PLAZOS SEGÚN EL MONTO DISPONIBLE
+                $monto_disponible = (int) $linea_credito->limite_disponible;
+                $plazos_disponibles = getPlazosDisponibles($monto_disponible);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $tiene_prestamos_pagados
+                        ? 'Línea de crédito disponible (incremento ya aplicado)'
+                        : 'Línea de crédito disponible (sin incremento pendiente)',
+                    'data'    => [
+                        'linea_credito_id'        => $linea_credito->id,
+                        'monto_aprobado'          => (int) $linea_credito->limite_aprobado,
+                        'monto_disponible'        => $monto_disponible,
+                        'montos_sugeridos'        => $montos_sugeridos,
+                        'plazos_disponibles'      => $plazos_disponibles,
+                        'tiene_prestamos_pagados' => $tiene_prestamos_pagados,
+                        'incremento_pendiente'    => false,
+                    ],
+                ], 200);
+            }
+
+            // 6. APLICAR INCREMENTO ENTERO (SIN DECIMALES)
+            $incremento       = calcular_incremento_entero($ultimo_prestamo_pagado->monto_total_pagar, 'ceil');
+            $nuevo_limite     = (int) ($linea_credito->limite_aprobado + $incremento);
+            $nuevo_disponible = (int) ($linea_credito->limite_disponible + $incremento);
+
+            $linea_credito->limite_aprobado   = $nuevo_limite;
+            $linea_credito->limite_disponible = $nuevo_disponible;
+            $linea_credito->save();
+
+            $ultimo_prestamo_pagado->incremento_aplicado = 1;
+            $ultimo_prestamo_pagado->fecha_incremento    = now();
+            $ultimo_prestamo_pagado->save();
+
+            $montos_sugeridos = generarMontosSugeridos($nuevo_disponible);
+
+            // 🔥 OBTENER PLAZOS SEGÚN EL NUEVO MONTO DISPONIBLE
+            $plazos_disponibles = getPlazosDisponibles($nuevo_disponible);
 
             return response()->json([
                 'success' => true,
-                'message' => $tiene_prestamos_pagados
-                    ? 'Línea de crédito disponible (incremento ya aplicado)'
-                    : 'Línea de crédito disponible (sin incremento pendiente)',
+                'message' => 'Línea de crédito actualizada por buen historial de pago',
                 'data'    => [
                     'linea_credito_id'        => $linea_credito->id,
-                    'monto_aprobado'          => (int) $linea_credito->limite_aprobado,
-                    'monto_disponible'        => $monto_disponible,
+                    'monto_aprobado'          => $nuevo_limite,
+                    'monto_disponible'        => $nuevo_disponible,
                     'montos_sugeridos'        => $montos_sugeridos,
                     'plazos_disponibles'      => $plazos_disponibles,
-                    'tiene_prestamos_pagados' => $tiene_prestamos_pagados,
+                    'incremento_aplicado'     => $incremento,
+                    'ultimo_prestamo_pagado'  => [
+                        'id'                  => $ultimo_prestamo_pagado->id,
+                        'folio'               => $ultimo_prestamo_pagado->folio,
+                        'monto_total'         => (int) $ultimo_prestamo_pagado->monto_total_pagar,
+                        'incremento_aplicado' => true,
+                    ],
+                    'tiene_prestamos_pagados' => true,
                     'incremento_pendiente'    => false,
                 ],
             ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'res'   => false,
+                'msg'   => 'Error al procesar la solicitud',
+                'error' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor',
+            ], 500);
         }
-
-        // 6. APLICAR INCREMENTO ENTERO (SIN DECIMALES)
-        $incremento       = calcular_incremento_entero($ultimo_prestamo_pagado->monto_total_pagar, 'ceil');
-        $nuevo_limite     = (int) ($linea_credito->limite_aprobado + $incremento);
-        $nuevo_disponible = (int) ($linea_credito->limite_disponible + $incremento);
-
-        $linea_credito->limite_aprobado   = $nuevo_limite;
-        $linea_credito->limite_disponible = $nuevo_disponible;
-        $linea_credito->save();
-
-        $ultimo_prestamo_pagado->incremento_aplicado = 1;
-        $ultimo_prestamo_pagado->fecha_incremento    = now();
-        $ultimo_prestamo_pagado->save();
-
-        $montos_sugeridos = generarMontosSugeridos($nuevo_disponible);
-
-        // 🔥 OBTENER PLAZOS SEGÚN EL NUEVO MONTO DISPONIBLE
-        $plazos_disponibles = getPlazosDisponibles($nuevo_disponible);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Línea de crédito actualizada por buen historial de pago',
-            'data'    => [
-                'linea_credito_id'        => $linea_credito->id,
-                'monto_aprobado'          => $nuevo_limite,
-                'monto_disponible'        => $nuevo_disponible,
-                'montos_sugeridos'        => $montos_sugeridos,
-                'plazos_disponibles'      => $plazos_disponibles,
-                'incremento_aplicado'     => $incremento,
-                'ultimo_prestamo_pagado'  => [
-                    'id'                  => $ultimo_prestamo_pagado->id,
-                    'folio'               => $ultimo_prestamo_pagado->folio,
-                    'monto_total'         => (int) $ultimo_prestamo_pagado->monto_total_pagar,
-                    'incremento_aplicado' => true,
-                ],
-                'tiene_prestamos_pagados' => true,
-                'incremento_pendiente'    => false,
-            ],
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'res'   => false,
-            'msg'   => 'Error al procesar la solicitud',
-            'error' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor',
-        ], 500);
     }
-}
     /**
      * FUNCIÓN PARA GENERAR OPCIONES DE PRÉSTAMO Y CREAR SOLICITUD
      */
-    public function genera_opciones(opcionesRequest $request)
+    public function generar_solicitud(opcionesRequest $request)
     {
         try {
             $user_token = $request->user();
@@ -227,14 +227,14 @@ public function solicita_user(Request $request)
                 ], 400);
             }
 
-              // Valida que el monto no sea mayor a 400 si el número de pagos es 1
-        if ( $numero_pagos == 1 && $request->monto_solicitado > 399 ) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'El número de pagos debe ser de 2 quincenas para montos mayores a 400',
-                'valores_permitidos' => [2]
-            ], 400);
-        }
+            // Valida que el monto no sea mayor a 400 si el número de pagos es 1
+            if ($numero_pagos == 1 && $request->monto_solicitado > 399) {
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'El número de pagos debe ser de 2 quincenas para montos mayores a 400',
+                    'valores_permitidos' => [2]
+                ], 400);
+            }
 
             $detalle = calcula_interes_detallado(
                 $request->monto_solicitado,
@@ -284,6 +284,14 @@ public function solicita_user(Request $request)
 
             $linea_credito->estatus_id = 2;
             $linea_credito->save();
+
+           try {
+            $brevoService = new \App\Services\BrevoService();
+            $brevoService->sendLoanRequestEmail($prestamo, $user_token, $detalle);
+            } catch (\Exception $e) {
+                \Log::error('Error al enviar correo con Brevo: ' . $e->getMessage());
+                // No interrumpir el flujo principal
+            }
 
             return response()->json([
                 'success' => true,
@@ -453,6 +461,4 @@ public function solicita_user(Request $request)
             ], 500);
         }
     }
-
-
 }
