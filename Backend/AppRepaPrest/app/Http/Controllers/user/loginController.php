@@ -43,71 +43,43 @@ class loginController extends Controller
      *
     */
     public function register_admin(registerAdminRequest $request)
-{
-    try {
-        // 1. Validación inicial
-        if (empty($request->email) && empty($request->telefono)) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'Se requiere al menos email o teléfono'
-            ], 400);
+    {
+        $resp=['res' => false, 'msg' => 'No puede generarse el usuario sin telefono o email'];
+        $status_resp = 400;
+        if ($request->email == null && $request->telefono == null) {
+            return response()->json($resp, $status_resp);
         }
-
-        // 2. Generar código único
         do {
             $codigo = Str::upper(Str::random(8));
         } while (Grupo::where('code', $codigo)->exists());
-
-        // 3. Transacción para asegurar consistencia
-        DB::beginTransaction();
-
-        // 4. Crear usuario
-        $user = User::create([
-            'nombre' => $request->name,
-            'apellido_p' => $request->apellido_p,
-            'apellido_m' => $request->apellido_m,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'telefono' => $request->telefono,
-            'rol_id' => 2,
-            'status_id' => 1,
-        ]);
-
-        // 5. Crear grupo
-        $grupo = Grupo::create([
-            'code' => $codigo,
-            'group_name' => $request->name_group,
-            'user_leader_id' => $user->id,
-            'status' => 1,
-        ]);
-
-        // 6. Asignar grupo al usuario
-        $user->update(['grupo_id' => $grupo->id]);
-
-        DB::commit();
-
-        // 7.Respuesta CORRECTA
-        return response()->json([
-            'res' => true,
-            'msg' => 'Usuario registrado exitosamente',
-            'data' => [
-                'user_id' => $user->id,
-                'nombre' => $user->nombre,
-                'email' => $user->email,
-                'telefono' => $user->telefono,
-                'codigo_grupo' => $codigo,
-                'grupo_nombre' => $grupo->group_name
-            ]
-        ], 201);
-
-    } catch (\Throwable $th) {
-        DB::rollBack();
-        return response()->json([
-            'res' => false,
-            'msg' => 'Error al registrar: ' . $th->getMessage()
-        ], 409);
+        $user = new User();
+        $user->nombre = $request->name;
+        $user->apellido_p = $request->apellido_p;
+        $user->apellido_m = $request->apellido_m;
+        $user->email = $request->email;
+        $user->password = Hash::make($request->password);
+        $user->telefono = $request->telefono;
+        $user->rol_id = 2;
+        $user->status_id = 1;
+        $resp['msg'] = "Se genero el usuario con Exito";
+        $status_resp = 201;
+        try {
+            $user->save();
+            $grupo = new Grupo();
+            $grupo->code = $codigo;
+            $grupo->group_name = $request->name_group;
+            $grupo->user_leader_id = $user->id;
+            $grupo->status = 1;
+            $grupo->save();
+            $user->grupo_id = $grupo->id;
+            $user->save();
+            $resp['code'] = $codigo;
+        } catch (\Throwable $th) {
+            $resp['msg'] = $th->getMessage();
+            $status_resp = 409;
+        }
+        return response()->json($resp, $status_resp);
     }
-}
 
     // FUNCION PARA REGISTRAR DEL USUARIO
     public function register(RegisterRequest $request)
