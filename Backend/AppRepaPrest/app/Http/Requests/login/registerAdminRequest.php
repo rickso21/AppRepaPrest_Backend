@@ -5,64 +5,83 @@ namespace App\Http\Requests\login;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Models\User;
+use App\Models\Grupo;
 
 class registerAdminRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            'email' => 'string|email|max:255',
-            'password' => 'required|string|min:8|confirmed',
             'name' => 'required|string|max:255',
-            'telefono' => 'nullable|string|max:20',
             'apellido_p' => 'required|string|max:255',
-            'apellido_m' => 'required|string|max:255',
-            'name_group' => 'required|string',
+            'apellido_m' => 'nullable|string|max:255',
+            'email' => 'nullable|string|email|max:255|unique:tbl_user,email',
+            'telefono' => 'nullable|string|max:20|unique:tbl_user,telefono',
+            'password' => 'required|string|min:8|confirmed',
+            'name_group' => 'required|string|max:255|unique:tbl_group,group_name',
         ];
     }
+
+    public function withValidator($validator)
+    {
+        $validator->after(function ($validator) {
+            if (empty($this->email) && empty($this->telefono)) {
+                $validator->errors()->add('email', 'Debe proporcionar al menos email o teléfono');
+                $validator->errors()->add('telefono', 'Debe proporcionar al menos email o teléfono');
+            }
+        });
+    }
+
     public function messages()
     {
         return [
-            'required' => ':attribute is required',
-            'name.string' => 'Name must be a string',
-            'name.max' => 'Name must be less than 255 characters',
-            'email.string' => 'Email must be a string',
-            'email.email' => 'Email must be a valid email address',
-            'email.max' => 'Email must be less than 255 characters',
-            'email.unique' => 'Email already exists',
-            'password.string' => 'Password must be a string',
-            'password.min' => 'Password must be at least 8 characters',
-            'password.confirmed' => 'Password confirmation does not match',
-            'telefono.string' => 'Phone number must be a string',
-            'telefono.max' => 'Phone number must be less than 20 characters',
-            'apellido_p.string' => 'First surname must be a string',
-            'apellido_p.max' => 'First surname must be less than 255 characters',
-            'apellido_m.string' => 'Second surname must be a string',
-            'apellido_m.max' => 'Second surname must be less than 255 characters',
-            'name_group.string' => 'Nombre del grupo must be a string',
-            'name_group.required' => 'Nombre del grupo is required',
+            // Nombre
+            'name.required' => 'El nombre es obligatorio',
+            'name.string' => 'El nombre debe ser texto',
+            'name.max' => 'El nombre no puede exceder 255 caracteres',
+
+            // Apellidos
+            'apellido_p.required' => 'El apellido paterno es obligatorio',
+            'apellido_p.string' => 'El apellido paterno debe ser texto',
+            'apellido_p.max' => 'El apellido paterno no puede exceder 255 caracteres',
+            'apellido_m.string' => 'El apellido materno debe ser texto',
+            'apellido_m.max' => 'El apellido materno no puede exceder 255 caracteres',
+
+            // Email
+            'email.email' => 'El formato del email no es válido',
+            'email.unique' => 'El email ya está registrado en el sistema',
+            'email.max' => 'El email no puede exceder 255 caracteres',
+
+            // Teléfono
+            'telefono.unique' => 'El teléfono ya está registrado en el sistema',
+            'telefono.max' => 'El teléfono no puede exceder 20 caracteres',
+
+            // Password
+            'password.required' => 'La contraseña es obligatoria',
+            'password.string' => 'La contraseña debe ser texto',
+            'password.min' => 'La contraseña debe tener al menos 8 caracteres',
+            'password.confirmed' => 'La confirmación de contraseña no coincide',
+
+            // Grupo
+            'name_group.required' => 'El nombre del grupo es obligatorio',
+            'name_group.string' => 'El nombre del grupo debe ser texto',
+            'name_group.max' => 'El nombre del grupo no puede exceder 255 caracteres',
+            'name_group.unique' => 'El nombre del grupo ya existe, elija otro',
         ];
     }
 
     public function failedValidation(Validator $validator)
     {
         throw new HttpResponseException(response()->json([
-            'success'   => false,
-            'message'   => 'Validation errors',
-            'data'      => $validator->errors()
-        ],400));
+            'res' => false,
+            'msg' => 'Errores de validación',
+            'errors' => $validator->errors()
+        ], 422));
     }
 }
