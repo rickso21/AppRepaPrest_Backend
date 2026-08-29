@@ -88,55 +88,91 @@ class loginController extends Controller
 
     return response()->json($resp, $status_resp);
 }
+
+
+
     // FUNCION PARA REGISTRAR DEL USUARIO
-    public function register(RegisterRequest $request)
+      public function register(registerRequest $request)
     {
-        $resp = ['res' => false, 'msg' => 'No puede generarse el usuario sin telefono o email'];
-        $status_resp = 400;
-
-        if ($request->email == null && $request->telefono == null) {
-            return response()->json($resp, $status_resp);
-        }
-
-        $id_grupo = Grupo::where('code', $request->code)->first();
-        if (!$id_grupo) {
-            $resp['msg'] = "El código de grupo no es válido";
-            $status_resp = 404;
-            return response()->json($resp, $status_resp);
-        }
-
         try {
-            $user = new User();
-            $user->nombre = $request->name;
-            $user->apellido_p = $request->apellido_p;
-            $user->apellido_m = $request->apellido_m;
-            $user->email = $request->email;
-            $user->password = Hash::make($request->password);
-            $user->telefono = $request->telefono;
-            $user->grupo_id = $id_grupo->id;
-            $user->rol_id = 1;
-            $user->status_id = 1;
-            $user->save();
+            //La validación ya está en el Request, pero verificamos extra
+            $grupo = Grupo::where('code', $request->code)->first();
 
-            $resp['res'] = true;
-            $resp['msg'] = "Usuario creado con éxito";
-            $resp['user_id'] = $user->id;
-            $resp['data'] = [
-                'usuario' => $user,
-                'configuracion' => $user->configuracionPanico,
-                'estado' => $user->estadoRepartidor
-            ];
-            $status_resp = 201;
+            if (!$grupo) {
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'El código de grupo no es válido'
+                ], 404);
+            }
+
+            // Verificar que el grupo esté activo
+            if ($grupo->status != 1) {
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'El grupo no está activo'
+                ], 403);
+            }
+
+            // Iniciar transacción
+            DB::beginTransaction();
+
+            // Crear usuario
+            $user = User::create([
+                'nombre' => $request->name,
+                'apellido_p' => $request->apellido_p,
+                'apellido_m' => $request->apellido_m,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'telefono' => $request->telefono,
+                'grupo_id' => $grupo->id,
+                'rol_id' => 1, // Rol de usuario normal
+                'status_id' => 1, // Activo
+            ]);
+
+            // Confirmar transacción
+            DB::commit();
+
+            // Cargar relaciones
+            $user->load(['configuracionPanico', 'estadoRepartidor']);
+
+            // Respuesta exitosa
+            return response()->json([
+                'res' => true,
+                'msg' => 'Usuario creado con éxito',
+                'user_id' => $user->id,
+                'data' => [
+                    'usuario' => [
+                        'id' => $user->id,
+                        'nombre' => $user->nombre,
+                        'apellido_p' => $user->apellido_p,
+                        'apellido_m' => $user->apellido_m,
+                        'email' => $user->email,
+                        'telefono' => $user->telefono,
+                        'rol_id' => $user->rol_id,
+                        'status_id' => $user->status_id,
+                        'grupo_id' => $user->grupo_id,
+                        'created_at' => $user->created_at,
+                    ],
+                    'configuracion' => $user->configuracionPanico,
+                    'estado' => $user->estadoRepartidor
+                ]
+            ], 201);
 
         } catch (\Throwable $th) {
-            $resp['msg'] = "Error al generar el usuario: " . $th->getMessage();
-            $status_resp = 409;
-            Log::error('Error en registro: ' . $th->getMessage());
+            // Revertir transacción en caso de error
+            DB::rollBack();
+
+            Log::error('Error en registro de usuario: ' . $th->getMessage(), [
+                'request' => $request->all(),
+                'trace' => $th->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al generar el usuario: ' . $th->getMessage()
+            ], 409);
         }
-
-        return response()->json($resp, $status_resp);
     }
-
     // FUNCION PARA VALIDAR DEL USUARIO
    public function login(loginRequest $request)
     {
