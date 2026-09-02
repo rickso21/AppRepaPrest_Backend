@@ -31,6 +31,7 @@ class registerAdminRequest extends FormRequest
             'apellido_p' => 'required|string|max:255',
             'apellido_m' => 'required|string|max:255',
             'name_group' => 'required|string',
+            'img_grupo' => 'required|string',
         ];
     }
     public function messages()
@@ -54,6 +55,8 @@ class registerAdminRequest extends FormRequest
             'apellido_m.max' => 'Second surname must be less than 255 characters',
             'name_group.string' => 'Nombre del grupo must be a string',
             'name_group.required' => 'Nombre del grupo is required',
+            'img_grupo.string' => 'Imagen del grupo must be a string',
+            'img_grupo.required' => 'Imagen del grupo is required',
         ];
     }
     

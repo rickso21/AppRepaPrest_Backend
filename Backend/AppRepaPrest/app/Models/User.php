@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Grupo;
 use App\Models\LineaCredito;
 use App\Models\Prestamo;
 use Database\Factories\UserFactory;
@@ -45,5 +46,9 @@ class User extends Authenticatable
     public function prestamos()
     {
         return $this->hasMany(Prestamo::class, 'usuario_id', 'id');
+    }
+    public function grupo() 
+    {
+        return $this->belongsTo(Grupo::class, 'grupo_id', 'id');
     }
 }

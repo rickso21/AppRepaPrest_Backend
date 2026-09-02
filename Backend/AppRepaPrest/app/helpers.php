@@ -305,4 +305,24 @@ if (!function_exists('generarFolio')) {
     }
 }
 
+function arch_adjunto($file, $file_name){
+    $ifp = fopen( public_path('/img/group/'.$file_name), 'wb' );
+    $data = explode( ',', $file );
+    // we could add validation here with ensuring count( $data ) > 1
+    fwrite( $ifp, base64_decode( $data[ 1 ] ) );
+    // clean up the file resource
+    fclose( $ifp );
+    return $file_name;
+}
+
+function arch_adjunto_publish($file, $file_name){
+    $ifp = fopen( public_path('/img/publish/'.$file_name), 'wb' );
+    $data = explode( ',', $file );
+    // we could add validation here with ensuring count( $data ) > 1
+    fwrite( $ifp, base64_decode( $data[ 1 ] ) );
+    // clean up the file resource
+    fclose( $ifp );
+    return $file_name;
+}
+
 ?>

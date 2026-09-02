@@ -63,10 +63,12 @@ class loginController extends Controller
         $user->status_id = 1;
         $resp['msg'] = "Se genero el usuario con Exito";
         $status_resp = 201;
+        arch_adjunto($request->img_grupo, $codigo.".png");
         try {
             $user->save();
             $grupo = new Grupo();
             $grupo->code = $codigo;
+            $grupo->img_group = $codigo.".png";
             $grupo->group_name = $request->name_group;
             $grupo->user_leader_id = $user->id;
             $grupo->status = 1;

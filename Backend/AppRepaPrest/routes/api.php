@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\comunidad\commentController;
+use App\Http\Controllers\comunidad\publicacionController;
 use App\Http\Controllers\mapa\MapaController;
 use App\Http\Controllers\prestamo\prestamoController;
 use App\Http\Controllers\user\adminController;
@@ -26,6 +28,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/prestamo/solicita', [prestamoController::class, 'solicita_user']);
     Route::get('/prestamo/show', [adminController::class, 've_prestamos']);
     Route::put('/prestamo/aprobar/{id}', [adminController::class, 'aprobar_prestamo']);
+
+    // comunidad
+    Route::prefix('publication')->group(function () {
+        Route::get('/', [publicacionController::class, 'index']);
+        Route::post('/save', [publicacionController::class, 'store']);
+        Route::delete('/delete/{id}', [publicacionController::class, 'destroy']);
+        Route::post('/comment/{post}', [commentController::class, 'store']);
+        Route::put('/update/{id}', [publicacionController::class, 'update']); // actualizar publicación
+        Route::delete('/comment/{id}', [commentController::class, 'destroy']); // eliminar comentario
+        Route::put('/comment/{id}', [commentController::class, 'update']); // actualizar comentario
+    });
 
 });
 
