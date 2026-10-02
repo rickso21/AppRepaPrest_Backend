@@ -5,17 +5,19 @@
 // ============================================
 
 if (!function_exists('numeroAleatorio')) {
-    function numeroAleatorio($min, $max) {
+    function numeroAleatorio($min, $max)
+    {
         return rand($min, $max);
     }
 }
 
 if (!function_exists('genera_token')) {
-    function genera_token(){
+    function genera_token()
+    {
         $code = "";
         $pattern = "1234567890abcdefghijklmnopqrstuvwxyz";
-        $max = strlen($pattern)-1;
-        for ($i=0; $i < 40; $i++) {
+        $max = strlen($pattern) - 1;
+        for ($i = 0; $i < 40; $i++) {
             $code .= $pattern[crypto_rand_secure(0, $max)];
         }
         return $code;
@@ -44,7 +46,8 @@ if (!function_exists('crypto_rand_secure')) {
 // ============================================
 
 if (!function_exists('calcula_interes_detallado')) {
-    function calcula_interes_detallado($monto, $quincenas) {
+    function calcula_interes_detallado($monto, $quincenas)
+    {
         // 1. TASA DE INTERÉS QUINCENAL SEGÚN PLAZO
         $tasas = [
             1 => 0.0795,
@@ -116,21 +119,24 @@ if (!function_exists('calcula_interes_detallado')) {
 }
 
 if (!function_exists('calcula_interes')) {
-    function calcula_interes($monto, $quincenas) {
+    function calcula_interes($monto, $quincenas)
+    {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         return $detalle['total_interes'];
     }
 }
 
 if (!function_exists('pago_quincenal')) {
-    function pago_quincenal($monto, $quincenas) {
+    function pago_quincenal($monto, $quincenas)
+    {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         return $detalle['pago_quincenal'];
     }
 }
 
 if (!function_exists('tasa_segun_plazo')) {
-    function tasa_segun_plazo($quincenas) {
+    function tasa_segun_plazo($quincenas)
+    {
         $tasas = [
             1 => 0.0925,   // 9.25%
             2 => 0.1000,   // 10.00%
@@ -177,21 +183,24 @@ if (!function_exists('calcular_incremento_entero')) {
 }
 
 if (!function_exists('pagos_quincenales')) {
-    function pagos_quincenales($monto, $quincenas) {
+    function pagos_quincenales($monto, $quincenas)
+    {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         return array_column($detalle['desglose_quincenal'], 'pago_total');
     }
 }
 
 if (!function_exists('total_a_pagar')) {
-    function total_a_pagar($monto, $quincenas) {
+    function total_a_pagar($monto, $quincenas)
+    {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         return $detalle['total_pagar'];
     }
 }
 
 if (!function_exists('verificar_pagos_exactos')) {
-    function verificar_pagos_exactos($monto, $quincenas) {
+    function verificar_pagos_exactos($monto, $quincenas)
+    {
         $detalle = calcula_interes_detallado($monto, $quincenas);
         $pagos = array_column($detalle['desglose_quincenal'], 'pago_total');
         $suma = array_sum($pagos);
@@ -215,8 +224,9 @@ if (!function_exists('getEstadoTexto')) {
         $estados = [
             1 => 'Solicitado',
             2 => 'Aprobado',
-            3 => 'Pagado',
-            4 => 'Rechazado'
+            3 => 'activo',
+            4 => 'pagado',
+            5 => 'Rechazado'
         ];
 
         return $estados[$estado_id] ?? 'Desconocido';
@@ -227,10 +237,11 @@ if (!function_exists('validarTransicionEstado')) {
     function validarTransicionEstado($estado_actual, $nuevo_estado)
     {
         $transiciones = [
-            1 => [2, 4],    // Solicitado → Aprobado, Rechazado
-            2 => [3, 4],    // Aprobado → Pagado, Rechazado
-            3 => [],        // Pagado → (ninguna)
-            4 => []         // Rechazado → (ninguna)
+            1 => [2, 5],  // solicitado → aprobado o rechazado
+            2 => [4, 5],  // aprobado   → pagado o rechazado
+            3 => [4, 5],  // activo     → pagado o rechazado
+            4 => [],      // pagado (final)
+            5 => [],      // rechazado (final)
         ];
 
         if (!isset($transiciones[$estado_actual])) {
@@ -245,10 +256,11 @@ if (!function_exists('getTransicionesPermitidas')) {
     function getTransicionesPermitidas($estado_actual)
     {
         $transiciones = [
-            1 => ['2 (Aprobado)', '4 (Rechazado)'],
-            2 => ['3 (Pagado)', '4 (Rechazado)'],
-            3 => ['Ninguna (Estado final)'],
-            4 => ['Ninguna (Estado final)']
+            1 => ['2 (Aprobado)', '5 (Rechazado)'],
+            2 => ['4 (Pagado)', '5 (Rechazado)'],
+            3 => ['4 (Pagado)', '5 (Rechazado)'],
+            4 => ['Ninguna (Estado final)'],
+            5 => ['Ninguna (Estado final)'],
         ];
 
         return $transiciones[$estado_actual] ?? ['Ninguna'];
@@ -310,7 +322,7 @@ if (!function_exists('getEstadosParaSelector')) {
 // ============================================
 // FUNCIONES DE FECHAS
 // ============================================
-
+/*
 if (!function_exists('calcularProximaFechaPago')) {
     function calcularProximaFechaPago($prestamo)
     {
@@ -333,6 +345,50 @@ if (!function_exists('calcularProximaFechaPago')) {
         return $proxima_fecha;
     }
 }
+*/
+if (!function_exists('calcularProximaFechaPago')) {
+    function calcularProximaFechaPago($prestamo)
+    {
+        if (!$prestamo->fecha_desembolso) {
+            return null;
+        }
+
+        $fecha_desembolso = $prestamo->fecha_desembolso;
+        if (!$fecha_desembolso instanceof \Carbon\Carbon) {
+            $fecha_desembolso = \Carbon\Carbon::parse($fecha_desembolso);
+        }
+
+        $pagos_realizados = (int) ($prestamo->pagos_realizados ?? 0);
+
+        // Sin pagos → próxima es el primer pago
+        if ($pagos_realizados === 0) {
+            $primer_pago = $prestamo->fecha_primer_pago ?? null;
+
+            if ($primer_pago) {
+                if (!$primer_pago instanceof \Carbon\Carbon) {
+                    $primer_pago = \Carbon\Carbon::parse($primer_pago);
+                }
+                return $primer_pago;
+            }
+
+            return $fecha_desembolso->copy()->addDays(15);
+        }
+
+        // Con pagos → base = fecha real del último pago
+        $ultimo_pago = $prestamo->fecha_ultimo_pago ?? null;
+
+        if (!$ultimo_pago) {
+            return $fecha_desembolso->copy()->addDays($pagos_realizados * 15);
+        }
+
+        if (!$ultimo_pago instanceof \Carbon\Carbon) {
+            $ultimo_pago = \Carbon\Carbon::parse($ultimo_pago);
+        }
+
+        return $ultimo_pago->copy()->startOfDay()->addDays(15);
+    }
+}
+
 
 if (!function_exists('calcularDiasRestantes')) {
     function calcularDiasRestantes($fecha_futura)
@@ -428,14 +484,40 @@ if (!function_exists('validarFechaDesembolso')) {
 }
 
 if (!function_exists('calcularPorcentajePagado')) {
+    /**
+     * Calcula el porcentaje pagado del préstamo.
+     *
+     * Regla:
+     * - Si aún hay saldo pendiente (monto_restante > 0), el porcentaje
+     *   NUNCA debe llegar a 100. Se redondea hacia abajo con 2 decimales
+     *   y se topa en 99.99%.
+     * - Si el saldo es 0, devuelve 100.
+     *
+     * @param  \App\Models\Prestamo  $prestamo
+     * @return float
+     */
     function calcularPorcentajePagado($prestamo)
     {
         if ($prestamo->monto_total_pagar <= 0) {
             return 0;
         }
 
-        $monto_pagado = $prestamo->monto_total_pagar - ($prestamo->monto_restante ?? 0);
-        return round(($monto_pagado / $prestamo->monto_total_pagar) * 100, 2);
+        $monto_restante = $prestamo->monto_restante ?? 0;
+
+        //Si ya no hay saldo pendiente → 100%
+        if ($monto_restante <= 0) {
+            return 100.00;
+        }
+
+        $monto_pagado = $prestamo->monto_total_pagar - $monto_restante;
+
+        //Redondear hacia abajo con 2 decimales para no inflar el progreso
+        $porcentaje = floor(($monto_pagado / $prestamo->monto_total_pagar) * 10000) / 100;
+
+        //nunca 100 si aún hay deuda
+        $porcentaje = min($porcentaje, 99.99);
+
+        return round($porcentaje, 2);
     }
 }
 
@@ -869,7 +951,7 @@ if (!function_exists('generarMontosSugeridos')) {
         }
 
         // Ordenar por monto ascendente
-        usort($montos_unicos, function($a, $b) {
+        usort($montos_unicos, function ($a, $b) {
             return $a['monto'] - $b['monto'];
         });
 
@@ -914,7 +996,7 @@ if (!function_exists('generarMontosSugeridos')) {
             }
 
             // Ordenar nuevamente
-            usort($seleccionados, function($a, $b) {
+            usort($seleccionados, function ($a, $b) {
                 return $a['monto'] - $b['monto'];
             });
 
@@ -948,4 +1030,323 @@ if (!function_exists('getMontosPorRango')) {
 }
 
 
+// ============================================
+// VALIDACIÓN DE SALDO MÍNIMO
+// ============================================
 
+if (!function_exists('validarSaldoMinimo')) {
+    /**
+     * Valida que el saldo restante después de un pago no quede en un rango inválido.
+     *
+     * Regla: el saldo restante debe ser 0 (liquidación) o >= SALDO_MINIMO_PERMITIDO.
+     * No se permite dejar saldos entre 1 y (SALDO_MINIMO_PERMITIDO - 1).
+     *
+     * @param float $deuda_actual     Deuda actual del préstamo
+     * @param float $monto_pago       Monto que el usuario quiere pagar
+     * @param float $saldo_minimo     Saldo mínimo permitido (default 10)
+     * @return array ['valido' => bool, 'message' => string, 'saldo_resultante' => float, 'monto_sugerido' => float]
+     */
+    function validarSaldoMinimo($deuda_actual, $monto_pago, $saldo_minimo = 10)
+    {
+        $deuda_actual = (float) $deuda_actual;
+        $monto_pago   = (float) $monto_pago;
+        $saldo_resultante = $deuda_actual - $monto_pago;
+
+        // Si el pago excede la deuda → inválido (ya se valida aparte, pero por seguridad)
+        if ($monto_pago > $deuda_actual) {
+            return [
+                'valido'            => false,
+                'message'           => 'El monto del pago excede la deuda actual',
+                'saldo_resultante'  => $saldo_resultante,
+                'monto_sugerido'    => $deuda_actual,
+            ];
+        }
+
+        // Si el saldo resultante es 0 → liquidación total, permitido
+        if ($saldo_resultante <= 0) {
+            return [
+                'valido'            => true,
+                'message'           => 'Pago permitido (liquidación total)',
+                'saldo_resultante'  => 0,
+                'monto_sugerido'    => $monto_pago,
+            ];
+        }
+
+        // Si el saldo resultante es >= saldo_minimo → permitido
+        if ($saldo_resultante >= $saldo_minimo) {
+            return [
+                'valido'            => true,
+                'message'           => 'Pago permitido',
+                'saldo_resultante'  => $saldo_resultante,
+                'monto_sugerido'    => $monto_pago,
+            ];
+        }
+
+        // Saldo resultante entre 1 y (saldo_minimo - 1) → inválido
+        // Sugerir dos opciones: liquidar todo o dejar exactamente el saldo mínimo
+        $monto_para_liquidar = $deuda_actual;
+        $monto_para_dejar_minimo = $deuda_actual - $saldo_minimo;
+
+        return [
+            'valido'                    => false,
+            'message'                   => "No puedes dejar un saldo menor a \${$saldo_minimo}. " .
+                "Puedes pagar \${$monto_para_liquidar} para liquidar el préstamo " .
+                "o \${$monto_para_dejar_minimo} para dejar un saldo de \${$saldo_minimo}.",
+            'saldo_resultante'          => $saldo_resultante,
+            'monto_sugerido'            => $monto_para_liquidar,
+            'monto_para_liquidar'       => $monto_para_liquidar,
+            'monto_para_dejar_minimo'   => $monto_para_dejar_minimo,
+            'saldo_minimo'              => $saldo_minimo,
+        ];
+    }
+
+    function arch_adjunto($file, $file_name)
+    {
+        $ifp = fopen(public_path('/img/group/' . $file_name), 'wb');
+        $data = explode(',', $file);
+        // we could add validation here with ensuring count( $data ) > 1
+        fwrite($ifp, base64_decode($data[1]));
+        // clean up the file resource
+        fclose($ifp);
+        return $file_name;
+    }
+
+    function arch_adjunto_publish($file, $file_name)
+    {
+        $ifp = fopen(public_path('/img/publish/' . $file_name), 'wb');
+        $data = explode(',', $file);
+        // we could add validation here with ensuring count( $data ) > 1
+        fwrite($ifp, base64_decode($data[1]));
+        // clean up the file resource
+        fclose($ifp);
+        return $file_name;
+    }
+}
+
+// ============================================
+// FUNCIONES DE WHATSAPP
+// ============================================
+
+if (!function_exists('normalizarTelefonoWhatsApp')) {
+    /**
+     * Normaliza un teléfono a formato internacional apto para WhatsApp.
+     *
+     * Reglas:
+     *  - Quita todo lo que no sea dígito (+, espacios, guiones, paréntesis).
+     *  - Quita ceros a la izquierda.
+     *  - 10 dígitos           → se asume México y antepone 52.
+     *  - 12 dígitos con 52    → ya viene con lada MX.
+     *  - 11 o más dígitos     → se asume lada internacional.
+     *  - Menos de 10 dígitos  → inválido (null).
+     *
+     * @param  string|null $telefono
+     * @param  string      $paisDefault Código de país por defecto (52 = México)
+     * @return string|null
+     */
+    function normalizarTelefonoWhatsApp($telefono, $paisDefault = '52')
+    {
+        if (!$telefono) {
+            return null;
+        }
+
+        // Quitar todo lo que no sea dígito
+        $num = preg_replace('/\D+/', '', (string) $telefono);
+
+        if ($num === '') {
+            return null;
+        }
+
+        // Quitar ceros a la izquierda (marcación local)
+        $num = ltrim($num, '0');
+
+        // Ya viene con lada de México (52 + 10 = 12 dígitos)
+        if (strlen($num) === 12 && strpos($num, '52') === 0) {
+            return $num;
+        }
+
+        // 10 dígitos → asumimos México
+        if (strlen($num) === 10) {
+            return $paisDefault . $num;
+        }
+
+        // 11 o más dígitos → asumimos que ya trae lada internacional
+        if (strlen($num) >= 11) {
+            return $num;
+        }
+
+        // Menos de 10 dígitos → inválido
+        return null;
+    }
+}
+
+if (!function_exists('telefonoEsWhatsAppValido')) {
+    /**
+     * ¿El teléfono es apto para WhatsApp?
+     *
+     * @param  string|null $telefono
+     * @return bool
+     */
+    function telefonoEsWhatsAppValido($telefono)
+    {
+        return normalizarTelefonoWhatsApp($telefono) !== null;
+    }
+}
+
+if (!function_exists('generarLinkWhatsApp')) {
+    /**
+     * Genera la URL de WhatsApp con mensaje pre-llenado.
+     * Devuelve null si el teléfono no es válido.
+     *
+     * @param  string|null $telefono
+     * @param  string      $mensaje
+     * @return string|null
+     */
+    function generarLinkWhatsApp($telefono, $mensaje = '')
+    {
+        $num = normalizarTelefonoWhatsApp($telefono);
+
+        if (!$num) {
+            return null;
+        }
+
+        $url = 'https://wa.me/' . $num;
+
+        if ($mensaje !== '') {
+            $url .= '?text=' . rawurlencode($mensaje);
+        }
+
+        return $url;
+    }
+}
+
+if (!function_exists('mensajeWhatsAppPorEstado')) {
+    /**
+     * Mensaje contextual según estado del préstamo y alerta de pago.
+     *
+     * @param  int         $estadoId  1=Solicitado, 2=Aprobado, 3=Activo, 4=Pagado, 5=Rechazado
+     * @param  string      $alerta    'normal' | 'precaucion' | 'urgente' | 'vencido'
+     * @param  string|null $nombre    Nombre del cliente para personalizar
+     * @return string
+     */
+    function mensajeWhatsAppPorEstado($estadoId, $alerta = 'normal', $nombre = null)
+    {
+        $saludo = $nombre ? "Hola {$nombre}, " : 'Hola, ';
+
+        switch ((int) $estadoId) {
+            case 1:
+                return $saludo . 'te contactamos para dar seguimiento a tu solicitud de préstamo.';
+
+            case 2:
+                switch ($alerta) {
+                    case 'vencido':
+                        return $saludo . 'te recordamos que tienes un pago VENCIDO. ¿Podemos coordinar tu pago?';
+                    case 'urgente':
+                        return $saludo . 'tu pago vence mañana. ¿Te apoyamos con el proceso?';
+                    case 'precaucion':
+                        return $saludo . 'tu próximo pago está cerca. ¿Te recordamos el monto?';
+                    default:
+                        return $saludo . 'te contactamos para dar seguimiento a tu préstamo aprobado.';
+                }
+
+            case 3:
+                return $saludo . 'te contactamos para dar seguimiento a tu préstamo activo.';
+
+            case 4:
+                return $saludo . '¡Gracias por tu pago! Tu préstamo está liquidado.';
+
+            case 5:
+                return $saludo . 'te contactamos respecto a tu solicitud de préstamo.';
+
+            default:
+                return $saludo . 'te contactamos de Financiera.';
+        }
+    }
+}
+
+if (!function_exists('calcularAlertaPago')) {
+    /**
+     * Calcula la alerta de pago a partir de un préstamo.
+     * Devuelve:
+     *   [
+     *     'dias_restantes' => int|null,
+     *     'alerta'         => 'normal'|'precaucion'|'urgente'|'vencido',
+     *     'proxima_fecha'  => Carbon|null,
+     *   ]
+     *
+     * @param  \App\Models\Prestamo $prestamo
+     * @return array
+     */
+    function calcularAlertaPago($prestamo)
+    {
+        $resultado = [
+            'dias_restantes' => null,
+            'alerta'         => 'normal',
+            'proxima_fecha'  => null,
+        ];
+
+        // Solo para préstamos aprobados o activos
+        if (!in_array((int) $prestamo->estado_prestamo_id, [2, 3])) {
+            return $resultado;
+        }
+
+        $proxima = calcularProximaFechaPago($prestamo);
+
+        if (!$proxima) {
+            return $resultado;
+        }
+
+        $dias = (int) now()->startOfDay()->diffInDays(
+            $proxima->copy()->startOfDay(),
+            false
+        );
+
+        $alerta = 'normal';
+        if ($dias < 0) {
+            $alerta = 'vencido';
+        } elseif ($dias <= 1) {
+            $alerta = 'urgente';
+        } elseif ($dias <= 3) {
+            $alerta = 'precaucion';
+        }
+
+        return [
+            'dias_restantes' => $dias,
+            'alerta'         => $alerta,
+            'proxima_fecha'  => $proxima,
+        ];
+    }
+}
+
+if (!function_exists('whatsappUrlParaPrestamo')) {
+    /**
+     * Atajo: dado un préstamo, devuelve la URL de WhatsApp lista para abrir.
+     * Usa el teléfono del usuario, calcula la alerta y arma el mensaje contextual.
+     * Devuelve null si el teléfono no es válido.
+     *
+     * @param  \App\Models\Prestamo $prestamo  (debe traer relación 'usuario' cargada)
+     * @param  string|null          $mensaje   Mensaje override opcional
+     * @return string|null
+     */
+    function whatsappUrlParaPrestamo($prestamo, $mensaje = null)
+    {
+        if (!$prestamo || !$prestamo->usuario) {
+            return null;
+        }
+
+        $telefono = $prestamo->usuario->telefono ?? null;
+
+        if (!telefonoEsWhatsAppValido($telefono)) {
+            return null;
+        }
+
+        $alertaData = calcularAlertaPago($prestamo);
+
+        $texto = $mensaje ?: mensajeWhatsAppPorEstado(
+            (int) $prestamo->estado_prestamo_id,
+            $alertaData['alerta'],
+            $prestamo->usuario->nombre ?? null
+        );
+
+        return generarLinkWhatsApp($telefono, $texto);
+    }
+}

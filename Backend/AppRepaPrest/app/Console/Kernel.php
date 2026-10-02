@@ -8,27 +8,15 @@ use Illuminate\Support\Facades\Log;
 
 class Kernel extends ConsoleKernel
 {
-    /**
-     * The Artisan commands provided by your application.
-     *
-     * @var array
-     */
     protected $commands = [
         // Commands registrados aquí si los tienes
     ];
 
-    /**
-     * Define the application's command schedule.
-     *
-     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
-     * @return void
-     */
     protected function schedule(Schedule $schedule)
     {
         // =============================================
         // 1. VERIFICAR TRANSFERENCIAS PENDIENTES
         // =============================================
-        // Cada 30 minutos verifica transferencias pendientes
         $schedule->call(function () {
             try {
                 $controller = new \App\Http\Controllers\tranferencia\tranferenciaController();
@@ -50,7 +38,6 @@ class Kernel extends ConsoleKernel
         // =============================================
         // 2. VERIFICAR TRANSFERENCIAS PENDIENTES (RESPALDO)
         // =============================================
-        // Verificación adicional cada hora como respaldo
         $schedule->call(function () {
             try {
                 $controller = new \App\Http\Controllers\tranferencia\tranferenciaController();
@@ -65,9 +52,8 @@ class Kernel extends ConsoleKernel
           ->withoutOverlapping();
 
         // =============================================
-        // 3. LIMPIAR PAGOS EXPIRADOS (OPCIONAL)
+        // 3. LIMPIAR PAGOS EXPIRADOS
         // =============================================
-        // Marcar como expirados los pagos que no se completaron
         $schedule->call(function () {
             try {
                 $expirados = \App\Models\Pago::where('status', 0)
@@ -92,12 +78,11 @@ class Kernel extends ConsoleKernel
         // =============================================
         // 4. LIMPIAR LOGS DE TRANSFERENCIAS ANTIGUOS
         // =============================================
-        // Limpiar registros de transferencias antiguas (opcional)
         $schedule->call(function () {
             try {
                 $fechaLimite = now()->subDays(30);
 
-                $limpiados = \App\Models\Pago::where('status', 2) // Rechazados
+                $limpiados = \App\Models\Pago::where('status', 2)
                     ->where('fecha_pago', '<', $fechaLimite)
                     ->delete();
 
@@ -113,9 +98,8 @@ class Kernel extends ConsoleKernel
           ->name('limpiar-pagos-antiguos');
 
         // =============================================
-        // 5. REPORTE DIARIO DE TRANSFERENCIAS (OPCIONAL)
+        // 5. REPORTE DIARIO DE TRANSFERENCIAS
         // =============================================
-        // Enviar reporte diario de transferencias del día
         $schedule->call(function () {
             try {
                 $hoy = now()->startOfDay();
@@ -150,13 +134,64 @@ class Kernel extends ConsoleKernel
             }
         })->dailyAt('23:59')
           ->name('reporte-diario-transferencias');
+
+        // =============================================
+        // 6. 👇 NUEVO: EXPIRAR ANUNCIOS VENCIDOS
+        // =============================================
+        // Se ejecuta a las 3 AM todos los días.
+        // Marca como expirados los anuncios cuya fecha 'end_at' ya pasó.
+        $schedule->call(function () {
+            try {
+                $expirados = \App\Models\Ad::where('status_id', 1)
+                    ->whereNotNull('end_at')
+                    ->where('end_at', '<', now())
+                    ->update([
+                        'status_id' => 2,   // 2 = expirado
+                        'updated_at' => now(),
+                    ]);
+
+                if ($expirados > 0) {
+                    Log::info('Cron: Anuncios expirados marcados', [
+                        'cantidad' => $expirados,
+                        'fecha'    => now()->toDateString(),
+                    ]);
+                } else {
+                    Log::info('Cron: Sin anuncios expirados hoy');
+                }
+            } catch (\Exception $e) {
+                Log::error('Cron: Error al expirar anuncios', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        })->dailyAt('03:00')
+          ->name('expirar-anuncios')
+          ->withoutOverlapping();
+
+        // =============================================
+        // 7. 👇 NUEVO: LIMPIAR ANUNCIOS RECHAZADOS ANTIGUOS (opcional)
+        // =============================================
+        // Anuncios que nunca se pagaron (status_id = 0) y tienen más de 7 días.
+        $schedule->call(function () {
+            try {
+                $limpiados = \App\Models\Ad::where('status_id', 0)
+                    ->where('created_at', '<', now()->subDays(7))
+                    ->delete();
+
+                if ($limpiados > 0) {
+                    Log::info('Cron: Anuncios pendientes eliminados', [
+                        'cantidad' => $limpiados,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Cron: Error al limpiar anuncios pendientes', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        })->weekly()
+          ->name('limpiar-anuncios-pendientes');
     }
 
-    /**
-     * Register the commands for the application.
-     *
-     * @return void
-     */
     protected function commands()
     {
         $this->load(__DIR__.'/Commands');

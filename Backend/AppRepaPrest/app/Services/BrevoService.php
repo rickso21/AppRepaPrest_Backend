@@ -732,4 +732,130 @@ HTML;
         </html>
 HTML;
     }
+
+    /**
+ * Enviar correo con nueva contraseña temporal
+ */
+public function sendPasswordResetEmail($usuario, $nuevaPassword)
+{
+    try {
+        if (empty($usuario->email)) {
+            \Log::warning('Usuario sin email para reset de contraseña', [
+                'usuario_id' => $usuario->id,
+            ]);
+            return false;
+        }
+
+        $htmlContent = $this->buildPasswordResetHtml($usuario, $nuevaPassword);
+
+        $sendSmtpEmail = new SendSmtpEmail([
+            'sender' => [
+                'email' => $this->senderEmail,
+                'name'  => $this->senderName,
+            ],
+            'to' => [
+                [
+                    'email' => $usuario->email,
+                    'name'  => $usuario->nombre ?? 'Usuario',
+                ]
+            ],
+            'subject' => 'Tu nueva contraseña de acceso',
+            'htmlContent' => $htmlContent,
+            'headers' => [
+                'X-Mailin-custom' => 'password_reset',
+                'X-Mailin-msgid'  => uniqid(),
+            ],
+        ]);
+
+        $response = $this->apiInstance->sendTransacEmail($sendSmtpEmail);
+
+        \Log::info('Correo de recuperación enviado', [
+            'usuario_id' => $usuario->id,
+            'message_id' => $response->getMessageId(),
+        ]);
+
+        return $response;
+
+    } catch (\Exception $e) {
+        \Log::error('Error al enviar correo de recuperación', [
+            'usuario_id' => $usuario->id ?? null,
+            'error'      => $e->getMessage(),
+        ]);
+        return false;
+    }
 }
+
+/**
+ * HTML del correo de recuperación
+ */
+private function buildPasswordResetHtml($usuario, $nuevaPassword)
+{
+    $nombre = trim(
+        ($usuario->nombre ?? '') . ' ' .
+        ($usuario->apellido_p ?? '') . ' ' .
+        ($usuario->apellido_m ?? '')
+    ) ?: 'Usuario';
+
+    $fecha = now()->format('d/m/Y H:i');
+
+    return <<<HTML
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Recuperación de contraseña</title>
+    </head>
+    <body style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+
+            <!-- HEADER -->
+            <div style="text-align: center; border-bottom: 3px solid #FF6B35; padding-bottom: 20px; margin-bottom: 25px;">
+                <div style="width: 70px; height: 70px; border-radius: 50%; background: #FF6B35; display: inline-block; line-height: 70px; margin-bottom: 12px; text-align: center;">
+                    <span style="color: white; font-size: 32px; line-height: 70px;">🔐</span>
+                </div>
+                <h1 style="color: #FF6B35; margin: 0; font-size: 24px;">Nueva contraseña generada</h1>
+                <p style="color: #666; margin-top: 8px; font-size: 14px;">{$fecha}</p>
+            </div>
+
+            <!-- MENSAJE -->
+            <div style="text-align: center; margin-bottom: 25px;">
+                <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                    Hola <strong>{$nombre}</strong>,<br>
+                    Hemos generado una <strong>nueva contraseña </strong> para tu cuenta.<br>
+                    Úsala para iniciar sesión y nunca la compartas con nadie.
+                </p>
+            </div>
+
+            <!-- CONTRASEÑA -->
+            <div style="background: linear-gradient(135deg, #FFF4EC 0%, #FFE8D9 100%); border-left: 5px solid #FF6B35; border-radius: 10px; padding: 25px; margin-bottom: 25px; text-align: center;">
+                <p style="color: #666; font-size: 13px; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1px;">Tu nueva contraseña</p>
+                <p style="color: #FF6B35; font-size: 26px; font-weight: 800; margin: 0; letter-spacing: 2px; font-family: 'Courier New', monospace; word-break: break-all;">
+                    {$nuevaPassword}
+                </p>
+            </div>
+
+            <!-- AVISO -->
+            <div style="background: #fff3cd; border: 1px solid #ff8b07; border-radius: 8px; padding: 15px; margin-bottom: 25px;">
+                <p style="margin: 0; color: #856404; font-size: 14px; line-height: 1.6;">
+                    ⚠️ <strong>Por tu seguridad:</strong><br>
+                    • No compartas esta contraseña con nadie.<br>
+                    • Si no solicitaste este cambio, contacta a soporte inmediatamente.
+                </p>
+            </div>
+
+            <!-- FOOTER -->
+            <div style="border-top: 1px solid #e9ecef; padding-top: 15px; text-align: center; color: #aaa; font-size: 12px;">
+                <p style="margin: 0;">Este correo es generado automáticamente por el sistema.</p>
+                <p style="margin: 4px 0 0 0; font-weight: 500; color: #888;">
+                    Delivery Sobre Ruedas S.A de C.V © 2026
+                </p>
+            </div>
+
+        </div>
+    </body>
+    </html>
+HTML;
+}
+}
+

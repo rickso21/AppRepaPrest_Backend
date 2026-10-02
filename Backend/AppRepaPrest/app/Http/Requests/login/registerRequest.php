@@ -23,6 +23,7 @@ class registerRequest extends FormRequest
             'apellido_m' => 'nullable|string|max:255',
             'email' => 'required|string|email|max:255|unique:tbl_user,email',
             'telefono' => 'required|string|max:20|unique:tbl_user,telefono',
+            'ciudad'      => 'nullable|string|max:200',
             'password' => 'required|string|min:8|confirmed',
             'code' => 'required|string|exists:tbl_group,code',
         ];

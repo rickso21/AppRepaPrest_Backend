@@ -69,34 +69,36 @@ public function Current_location(Request $request)
     try {
         $user = $request->user();
 
-       $repartidores = DB::table('tbl_user as u')
-    ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
-    ->leftJoin('tbl_ubicaciones as ub', function($join) {
-        $join->on('u.id', '=', 'ub.usuario_id')
-             ->where('ub.es_activa', '=', 1);
-    })
-    ->leftJoin('tbl_alertas_panico as ap', function($join) {
-        $join->on('u.id', '=', 'ap.usuario_id')
-             ->where('ap.estado', '=', 'activa');
-    })
-   // ->where('u.id', '!=', $user->id)
-    ->where('u.status_id', 1)
-    ->where('er.estado', 'conectado')
-    ->select(
-        'u.id',
-        'u.nombre',
-        'u.apellido_p',
-        'u.telefono',
-        'ub.latitud',
-        'ub.longitud',
-        'ub.created_at as ultima_ubicacion',
-        'er.estado as estado_repartidor',
-        'ap.id as alerta_panico_id',
-        'ap.tipo_emergencia',
-        'ap.fecha_activacion as hora_panico'
-    )
-    ->orderBy('ub.created_at', 'desc')
-    ->get();
+        $repartidores = DB::table('tbl_user as u')
+            ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
+            ->leftJoin('tbl_ubicaciones as ub', function($join) {
+                $join->on('u.id', '=', 'ub.usuario_id')
+                     ->where('ub.es_activa', '=', 1);
+            })
+            ->leftJoin('tbl_alertas_panico as ap', function($join) {
+                $join->on('u.id', '=', 'ap.usuario_id')
+                     ->where('ap.estado', '=', 'activa');
+            })
+            ->where('u.status_id', 1)
+            ->where('er.estado', 'conectado')
+            ->where('u.grupo_id', $user->grupo_id)
+            ->where('u.id', '!=', $user->id)
+            ->select(
+                'u.id',
+                'u.nombre',
+                'u.apellido_p',
+                'u.telefono',
+                'ub.latitud',
+                'ub.longitud',
+                'ub.created_at as ultima_ubicacion',
+                'er.estado as estado_repartidor',
+                'ap.id as alerta_panico_id',
+                'ap.tipo_emergencia',
+                'ap.fecha_activacion as hora_panico'
+            )
+            ->orderBy('ub.created_at', 'desc')
+            ->get();
+
 
         // Log para depuración
         \Log::info('Repartidores encontrados:', [
@@ -153,30 +155,23 @@ public function Current_location(Request $request)
 public function Specific_user($id)
 {
     try {
-        $repartidor = DB::table('tbl_user as u')
-            ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
-            ->leftJoin('tbl_ubicaciones as ub', function($join) {
-                $join->on('u.id', '=', 'ub.usuario_id')
-                     ->where('ub.es_activa', '=', 1);
-            })
-            ->where('u.id', '=', $id)
-            ->where('u.status_id', 1)
-            ->select(
-                'u.id',
-                'u.nombre',
-                'u.apellido_p',
-                'u.telefono',
-                'ub.latitud',
-                'ub.longitud',
-                'er.estado as estado_repartidor'
-            )
-            ->first();
+         $repartidor = DB::table('tbl_user as u')
+        ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
+        ->leftJoin('tbl_ubicaciones as ub', function($join) {
+            $join->on('u.id', '=', 'ub.usuario_id')
+                 ->where('ub.es_activa', '=', 1);
+        })
+        ->where('u.id', '=', $id)
+        ->where('u.status_id', 1)
+        ->where('u.grupo_id', $user->grupo_id)
+        ->select(...)
+        ->first();
 
-        if (!$repartidor) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'Repartidor no encontrado'
-            ], 404);
+    if (!$repartidor) {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Repartidor no encontrado o no pertenece a tu grupo'
+        ], 404);
         }
 
         return response()->json([
@@ -298,6 +293,7 @@ public function UserStatus(Request $request)
                 'latitud' => $request->latitud,
                 'longitud' => $request->longitud,
                 'tipo_emergencia' => $request->tipo_emergencia,
+                'descripcion_adicional' => 'Biker en peligro',
                 'estado' => 'activa',
                 'fecha_activacion' => now()
             ]);
@@ -334,7 +330,10 @@ public function UserStatus(Request $request)
             $alerta->update([
                 'estado' => 'desactivada',
                 'fecha_desactivacion' => now(),
-                'razon_desactivacion' => $request->razon_desactivacion ?? 'Desactivada por usuario'
+                'razon_desactivacion' => $request->razon_desactivacion ?? 'Desactivada por usuario',
+                'desactivada_por_usuario_id' => $user->id,
+                'activo' => 0
+
             ]);
 
             \Log::info('Alerta de pánico desactivada:', [

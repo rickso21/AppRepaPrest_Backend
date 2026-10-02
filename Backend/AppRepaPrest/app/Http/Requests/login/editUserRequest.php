@@ -24,13 +24,19 @@ class editUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'nombre' => 'required|string|max:255',
-            'apellido_p' => 'required|string|max:255',
-            'apellido_m' => 'required|string|max:255',
-            'password' => 'string|min:8|confirmed',
-            'telefono' => 'required|string|min:10|max:15',        ];
+            'nombre'     => 'sometimes|string|max:200',
+            'apellido_p' => 'sometimes|nullable|string|max:200',
+            'apellido_m' => 'sometimes|nullable|string|max:200',
+            'email'      => 'sometimes|email|max:200',
+            'telefono'   => 'sometimes|nullable|string|max:200',
+            'ciudad'     => 'sometimes|nullable|string|max:50',
+            'password'   => 'sometimes|nullable|string|min:6',
+            'avatar'     => 'sometimes|image|mimes:jpeg,png,jpg,webp|max:5120',
+            'portada'    => 'sometimes|image|mimes:jpeg,png,jpg,webp|max:8192',
+
+        ];
     }
-        public function messages()
+    public function messages()
     {
         return [
             'required' => ':attribute is required',
@@ -48,6 +54,6 @@ class editUserRequest extends FormRequest
             'success'   => false,
             'message'   => 'Validation errors',
             'data'      => $validator->errors()
-        ],400));
+        ], 400));
     }
 }

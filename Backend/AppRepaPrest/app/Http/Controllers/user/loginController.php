@@ -9,246 +9,690 @@ use App\Http\Requests\login\registerAdminRequest;
 use App\Http\Requests\login\registerRequest;
 use App\Models\Grupo;
 use App\Models\User;
+use App\Services\BrevoService;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class loginController extends Controller
 {
-    /**
-     * FUNCION PARA GUARDAR DEL USUARIO
-     *
-     * @param  App\Http\Requests\login\registerAdminRequest  $request
-     *
-     * @bodyParam string email required The email of the user. Example: john.doe@mail.com
-     * @bodyParam integer id_grupo required Number indicates group that belong. Example: 1
-     * @bodyParam string nombre required First name of the user. Example: John
-     * @bodyParam string apellidos required The last name of the user. Example: Doe
-     * @bodyParam integer id_rol required Number indicates permission that have. Example: 1
-     *
-     * @response 201 {
-     *   "res": true,
-     *   "msg": "Se genero el usuario con Exito"
-     * }
-     *
-     * @response 400 {
-     *   "res": false,
-     *   "msg": "No es posible generar el usuario"
-     * }
-     *
-     * @response 409 {
-     *   "res": false,
-     *   "msg": "Error al generar el usuario"
-     * }
-     *
-    */
+    // ================================================================
+    // CONSTANTES
+    // ================================================================
+
+    private const TOKEN_EXPIRATION_MINUTES = 60 * 24 * 7;
+
+    /** Roles del sistema */
+    private const ROL_USER        = 1;
+    private const ROL_ADMIN       = 2;
+    private const ROL_SUPER_ADMIN = 3;
+    private const ROL_COMERCIO    = 4;
+
+    /** Estados del usuario */
+    private const STATUS_ACTIVO   = 1;
+    private const STATUS_INACTIVO = 2;
+
+    // ================================================================
+    // REGISTROS
+    // ================================================================
+
     public function register_admin(registerAdminRequest $request)
-{
-    $resp = ['res' => false, 'msg' => 'No puede generarse el usuario sin telefono o email'];
-    $status_resp = 400;
+    {
+        if ($request->email === null && $request->telefono === null) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No puede generarse el usuario sin teléfono o email',
+            ], 400);
+        }
 
-    if ($request->email == null && $request->telefono == null) {
-        return response()->json($resp, $status_resp);
+        // Generar código único de grupo
+        do {
+            $codigo = Str::upper(Str::random(8));
+        } while (Grupo::where('code', $codigo)->exists());
+
+        try {
+            DB::beginTransaction();
+
+            $user = $this->crearUsuario($request, self::ROL_ADMIN);
+
+            // Crear grupo con el nuevo admin como líder
+            $grupo = new Grupo();
+            $grupo->code           = $codigo;
+            $grupo->group_name     = $request->name_group;
+            $grupo->user_leader_id = $user->id;
+            $grupo->status         = 1;
+            $grupo->save();
+
+            $user->grupo_id = $grupo->id;
+            $user->save();
+
+            DB::commit();
+
+            return response()->json([
+                'res'  => true,
+                'msg'  => 'Se generó el usuario con éxito',
+                'code' => $codigo,
+                'user' => $this->formatearUsuarioBasico($user),
+            ], 201);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            Log::error('[register_admin] Error: ' . $th->getMessage());
+
+            return response()->json([
+                'res' => false,
+                'msg' => $th->getMessage(),
+            ], 409);
+        }
     }
 
-    do {
-        $codigo = Str::upper(Str::random(8));
-    } while (Grupo::where('code', $codigo)->exists());
 
-    $user = new User();
-    $user->nombre = $request->name;
-    $user->apellido_p = $request->apellido_p;
-    $user->apellido_m = $request->apellido_m;
-    $user->email = $request->email;
-    $user->password = Hash::make($request->password);
-    $user->telefono = $request->telefono;
-    $user->rol_id = 2;
-    $user->status_id = 1;
-
-    $resp['res'] = true;
-    $resp['msg'] = "Se genero el usuario con Exito";
-    $status_resp = 201;
-
-    try {
-        $user->save();
-        $grupo = new Grupo();
-        $grupo->code = $codigo;
-        $grupo->group_name = $request->name_group;
-        $grupo->user_leader_id = $user->id;
-        $grupo->status = 1;
-        $grupo->save();
-        $user->grupo_id = $grupo->id;
-        $user->save();
-        $resp['code'] = $codigo;
-    } catch (\Throwable $th) {
-        $resp['res'] = false;
-        $resp['msg'] = $th->getMessage();
-        $status_resp = 409;
-    }
-
-    return response()->json($resp, $status_resp);
-}
-
-
-
-    // FUNCION PARA REGISTRAR DEL USUARIO
-      public function register(registerRequest $request)
+    public function register(registerRequest $request)
     {
         try {
-            //La validación ya está en el Request, pero verificamos extra
+            // Buscar grupo por código
             $grupo = Grupo::where('code', $request->code)->first();
 
             if (!$grupo) {
                 return response()->json([
                     'res' => false,
-                    'msg' => 'El código de grupo no es válido'
+                    'msg' => 'El código de grupo no es válido',
                 ], 404);
             }
 
-            // Verificar que el grupo esté activo
             if ($grupo->status != 1) {
                 return response()->json([
                     'res' => false,
-                    'msg' => 'El grupo no está activo'
+                    'msg' => 'El grupo no está activo',
                 ], 403);
             }
 
-            // Iniciar transacción
             DB::beginTransaction();
 
-            // Crear usuario
-            $user = User::create([
-                'nombre' => $request->name,
-                'apellido_p' => $request->apellido_p,
-                'apellido_m' => $request->apellido_m,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'telefono' => $request->telefono,
-                'grupo_id' => $grupo->id,
-                'rol_id' => 1, // Rol de usuario normal
-                'status_id' => 1, // Activo
-            ]);
+            $user = $this->crearUsuario($request, self::ROL_USER);
+            $user->grupo_id = $grupo->id;
+            $user->save();
 
-            // Confirmar transacción
             DB::commit();
 
-            // Cargar relaciones
             $user->load(['configuracionPanico', 'estadoRepartidor']);
 
-            // Respuesta exitosa
             return response()->json([
-                'res' => true,
-                'msg' => 'Usuario creado con éxito',
+                'res'     => true,
+                'msg'     => 'Usuario creado con éxito',
                 'user_id' => $user->id,
-                'data' => [
-                    'usuario' => [
-                        'id' => $user->id,
-                        'nombre' => $user->nombre,
-                        'apellido_p' => $user->apellido_p,
-                        'apellido_m' => $user->apellido_m,
-                        'email' => $user->email,
-                        'telefono' => $user->telefono,
-                        'rol_id' => $user->rol_id,
-                        'status_id' => $user->status_id,
-                        'grupo_id' => $user->grupo_id,
-                        'created_at' => $user->created_at,
-                    ],
+                'data'    => [
+                    'usuario'       => $this->formatearUsuarioCompleto($user),
                     'configuracion' => $user->configuracionPanico,
-                    'estado' => $user->estadoRepartidor
-                ]
+                    'estado'        => $user->estadoRepartidor,
+                ],
             ], 201);
 
         } catch (\Throwable $th) {
-            // Revertir transacción en caso de error
             DB::rollBack();
-
-            Log::error('Error en registro de usuario: ' . $th->getMessage(), [
+            Log::error('[register] Error: ' . $th->getMessage(), [
                 'request' => $request->all(),
-                'trace' => $th->getTraceAsString()
+                'trace'   => $th->getTraceAsString(),
             ]);
 
             return response()->json([
                 'res' => false,
-                'msg' => 'Error al generar el usuario: ' . $th->getMessage()
+                'msg' => 'Error al generar el usuario: ' . $th->getMessage(),
             ], 409);
         }
     }
-    // FUNCION PARA VALIDAR DEL USUARIO
-   public function login(loginRequest $request)
+
+
+    public function register_comercio(Request $request)
     {
-        $resp = ['res' => false, 'msg' => 'Algo salió mal'];
-        $status_resp = 400;
+        $request->validate([
+            'name'            => 'required|string|max:100',
+            'email'           => 'required|email|unique:tbl_user,email',
+            'telefono'        => 'required|string|max:20|unique:tbl_user,telefono',
+            'password'        => 'required|string|min:6|confirmed',
+            'nombre_comercio' => 'required|string|max:150',
+        ]);
 
-        // Buscar usuario por email o teléfono
-         $user = User::where(function($query) use ($request) {
-        $query->where('email', $request->email)
-              ->orWhere('telefono', $request->email);
-        })->first();
+        try {
+            DB::beginTransaction();
 
-        // BUSCA SI EL USUARIO EXISTE
-        if ($user) {
-            // EL USUARIO SE LOGUEA DIRECTAMENTE SI NO ES CONTRASEÑA POR DEFECTO
-            $tiempo_expira = 5;
-            $date = Carbon::now();
+            $user = $this->crearUsuario($request, self::ROL_COMERCIO);
+            $user->nombre_comercio = trim($request->nombre_comercio);
+            $user->save();
 
-            if (Hash::check($request->password, $user->password)) {
-                $token = $user->createToken("Palabra_Secreta");
-                $resp = [
-                    "res" => true,
-                    "token" => $token->plainTextToken,
-                    "created_at" => $date->format('Y-m-d H:i:s'),
-                    "expired_at" => $date->addMinutes($tiempo_expira)->format('Y-m-d H:i:s'),
-                    "msg" => numeroAleatorio(1, 10),
-                    "user" => [ // Opcional: incluir datos del usuario
-                        "id" => $user->id,
-                        "nombre" => $user->nombre." ".$user->apellido_p." ".$user->apellido_m,
-                        "email" => $user->email,
-                        "telefono" => $user->telefono
-                    ]
-                ];
-                $status_resp = 200;
-            } else {
-                $resp['msg'] = "Contraseña incorrecta.";
-                $status_resp = 401;
-            }
-        } else {
-            $resp['msg'] = "Usuario no encontrado.";
-            $status_resp = 404;
+            DB::commit();
+
+            return response()->json([
+                'res'  => true,
+                'msg'  => 'Comercio registrado con éxito',
+                'user' => [
+                    'id'              => $user->id,
+                    'nombre'          => $this->nombreCompleto($user),
+                    'nombre_comercio' => $user->nombre_comercio,
+                    'email'           => $user->email,
+                    'rol_id'          => $user->rol_id,
+                ],
+            ], 201);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            Log::error('[register_comercio] Error: ' . $th->getMessage());
+
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al registrar comercio: ' . $th->getMessage(),
+            ], 409);
         }
-
-        return response()->json($resp, $status_resp);
     }
 
-    // FUNCION PARA EDITAR INFORMACIÓN DEL USUARIO
-     public function edit_user(editUserRequest $request)
+    // ================================================================
+    // AUTENTICACIÓN
+    // ================================================================
+    public function login(loginRequest $request)
     {
-        $resp=['res' => false, 'msg' => 'No es posible editar el usuario'];
+        $resp        = ['res' => false, 'msg' => 'Algo salió mal'];
         $status_resp = 400;
+
+        $user = User::where(function ($query) use ($request) {
+            $query->where('email', $request->email)
+                ->orWhere('telefono', $request->email);
+        })->first();
+
+        if (!$user) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no encontrado, vuelve a intentarlo',
+            ], 404);
+        }
+
+        // Validar cuenta activa
+        if ((int) $user->status_id !== self::STATUS_ACTIVO) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
+            ], 403);
+        }
+
+        // Validar contraseña
+        if (!Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Contraseña incorrecta.',
+            ], 401);
+        }
+
+        // Crear token
+        $token = $user->createToken('Palabra_Secreta');
+        $date  = Carbon::now();
+
+        return response()->json([
+            'res'        => true,
+            'token'      => $token->plainTextToken,
+            'created_at' => $date->format('Y-m-d H:i:s'),
+            'expired_at' => $date->copy()
+                ->addMinutes(self::TOKEN_EXPIRATION_MINUTES)
+                ->format('Y-m-d H:i:s'),
+            'msg'        => numeroAleatorio(1, 10),
+            'user'       => $this->formatearUsuarioLogin($user),
+        ], 200);
+    }
+
+    // ================================================================
+    // PERFIL DEL USUARIO
+    // ================================================================
+
+    /**
+     * PUT/POST /api/update
+     *
+     * Actualiza los datos del usuario autenticado.
+     * Permite cambiar nombre, apellidos, teléfono, ciudad, email,
+     * contraseña, avatar y portada.
+     */
+    public function edit_user(editUserRequest $request)
+    {
         $user_token = $request->user();
+
         try {
             $user = User::findOrFail($user_token->id);
         } catch (\Throwable $th) {
-            $resp=['res' => false, 'msg' => 'Usuario no encontrado'];
-            $status_resp = 404;
-            return response()->json($resp, $status_resp);
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no encontrado',
+            ], 404);
         }
-        // SE MODIFICA LA INFORMACIÓN DEL USUARIO
-        $user->nombre = $request->nombre;
-        $user->apellido_p = $request->apellido_p;
-        $user->apellido_m = $request->apellido_m;
-        $user->telefono = $request->telefono;
-        $user->password = Hash::make($request->password);
+
         try {
+            DB::beginTransaction();
+
+            $this->actualizarDatosBasicos($user, $request);
+
+            // Validar email único si cambia
+            if ($request->filled('email') && $request->email !== $user->email) {
+                $exists = User::where('email', $request->email)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+
+                if ($exists) {
+                    DB::rollBack();
+                    return response()->json([
+                        'res' => false,
+                        'msg' => 'El correo ya está registrado por otro usuario',
+                    ], 409);
+                }
+
+                $user->email = $request->email;
+            }
+
+            // Contraseña (si viene)
+            if ($request->filled('password')) {
+                $user->password = Hash::make($request->password);
+            }
+
+            // Archivos (avatar/portada)
+            $this->actualizarArchivos($user, $request);
+
             $user->save();
-            $resp['msg'] = "Se edito el usuario con Exito";
-            $resp['res'] = true;
-            $status_resp = 200;
+            DB::commit();
+
+            return response()->json([
+                'res'  => true,
+                'msg'  => 'Se editó el usuario con éxito',
+                'user' => [
+                    'id'              => $user->id,
+                    'nombre'          => $user->nombre,
+                    'nombre_completo' => $this->nombreCompleto($user),
+                    'apellido_p'      => $user->apellido_p,
+                    'apellido_m'      => $user->apellido_m,
+                    'email'           => $user->email,
+                    'telefono'        => $user->telefono,
+                    'ciudad'          => $user->ciudad,
+                    'avatar_url'      => $user->avatar_url,
+                    'portada_url'     => $user->portada_url,
+                ],
+            ], 200);
+
         } catch (\Throwable $th) {
-            $resp['msg'] = "Error al editar el usuario";
-            $status_resp = 409;
+            DB::rollBack();
+            Log::error('[edit_user] Error: ' . $th->getMessage());
+
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al editar el usuario: ' . $th->getMessage(),
+            ], 409);
         }
-        return response()->json($resp, $status_resp);
+    }
+
+    /**
+     * GET /api/user/{id}
+     *
+     * Devuelve la información pública de un usuario.
+     */
+    public function show_user(Request $request, $id)
+    {
+        $user = User::with('grupo')->find($id);
+
+        if (!$user) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no encontrado',
+            ], 404);
+        }
+
+        return response()->json([
+            'res'  => true,
+            'user' => [
+                'id'          => $user->id,
+                'nombre'      => $this->nombreCompleto($user),
+                'telefono'    => $user->telefono,
+                'email'       => $user->email,
+                'ciudad'      => $user->ciudad,
+                'avatar_url'  => $user->avatar_url,
+                'portada_url' => $user->portada_url,
+                'rol'         => $user->rol_id,
+                'grupo'       => $user->grupo->group_name ?? null,
+            ],
+        ], 200);
+    }
+
+    /**
+     * GET /api/grupo/{id}
+     *
+     * Devuelve la información de un grupo y su administrador.
+     * El admin se busca primero por rol SUPER_ADMIN y si no existe,
+     * se usa el líder del grupo (user_leader_id).
+     */
+    public function show_grupo(Request $request, $id)
+    {
+        $grupo = Grupo::find($id);
+
+        if (!$grupo) {
+            return response()->json(['res' => false, 'msg' => 'Grupo no encontrado'], 404);
+        }
+
+        // Buscar admin del grupo
+        $adminGrupo = User::where('grupo_id', $grupo->id)
+            ->where('rol_id', self::ROL_SUPER_ADMIN)
+            ->first();
+
+        // Fallback: usar el líder del grupo
+        if (!$adminGrupo && $grupo->user_leader_id) {
+            $adminGrupo = User::find($grupo->user_leader_id);
+        }
+
+        return response()->json([
+            'res'   => true,
+            'grupo' => [
+                'id'         => $grupo->id,
+                'code'       => $grupo->code,
+                'group_name' => $grupo->group_name,
+                'status'     => $grupo->status,
+                'img_url'    => $grupo->img_url ?? null,
+                'admin'      => $adminGrupo ? [
+                    'id'          => (int) $adminGrupo->id,
+                    'nombre'      => $this->nombreCompleto($adminGrupo),
+                    'logo_url'    => $adminGrupo->logo_url ?? null,
+                    'portada_url' => $adminGrupo->portada_url,
+                    'avatar_url'  => $adminGrupo->avatar_url,
+                ] : null,
+            ],
+        ], 200);
+    }
+
+    // ================================================================
+    // GESTIÓN DE CUENTA
+    // ================================================================
+
+    /**
+     * DELETE /api/user/delete-account
+     *
+     * Inhabilita la cuenta del usuario autenticado (status_id = 2).
+     * No permite la acción si tiene préstamos activos (estados 1, 2, 3).
+     * Revoca todos los tokens de Sanctum.
+     */
+    public function delete_account(Request $request)
+    {
+        $user_token = $request->user();
+
+        if (!$user_token) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no autenticado',
+            ], 401);
+        }
+
+        $user = User::find($user_token->id);
+
+        if (!$user) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no encontrado',
+            ], 404);
+        }
+
+        // Validar préstamos activos
+        $prestamo = $this->buscarPrestamoBloqueante($user->id);
+
+        if ($prestamo) {
+            return response()->json([
+                'res'  => false,
+                'msg'  => $this->mensajePrestamoBloqueante($prestamo->estado_prestamo_id),
+                'data' => [
+                    'prestamo_id'      => $prestamo->id,
+                    'folio'            => $prestamo->folio,
+                    'estado'           => $prestamo->estado_prestamo_id,
+                    'monto_restante'   => (int) ($prestamo->monto_restante ?? $prestamo->monto_total_pagar),
+                    'pago_quincenal'   => (int) $prestamo->pago_quincenal,
+                    'numero_pagos'     => (int) $prestamo->numero_pagos,
+                    'pagos_realizados' => (int) ($prestamo->pagos_realizados ?? 0),
+                ],
+            ], 409);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $user->status_id = self::STATUS_INACTIVO;
+            $user->save();
+
+            // Revocar tokens
+            $user->tokens()->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'res' => true,
+                'msg' => 'Tu cuenta ha sido inhabilitada. Si deseas reactivarla, contacta a soporte.',
+            ], 200);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            Log::error('[delete_account] Error: ' . $th->getMessage());
+
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al inhabilitar la cuenta: ' . $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/user/reactivate
+     *
+     * Reactiva una cuenta inhabilitada. Solo admin/super admin.
+     */
+    public function reactivate_account(Request $request)
+    {
+        $admin = $request->user();
+
+        if (!$admin || !in_array($admin->rol_id, [self::ROL_ADMIN, self::ROL_SUPER_ADMIN])) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No tienes permisos para reactivar cuentas.',
+            ], 403);
+        }
+
+        $request->validate([
+            'user_id' => 'required|integer|exists:tbl_user,id',
+        ]);
+
+        $user = User::find($request->user_id);
+
+        if (!$user) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no encontrado.',
+            ], 404);
+        }
+
+        if ((int) $user->status_id === self::STATUS_ACTIVO) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'El usuario ya está activo.',
+            ], 400);
+        }
+
+        $user->status_id = self::STATUS_ACTIVO;
+        $user->save();
+
+        return response()->json([
+            'res' => true,
+            'msg' => 'Cuenta reactivada correctamente.',
+        ], 200);
+    }
+
+    // ================================================================
+    // HELPERS PRIVADOS
+    // ================================================================
+
+    /**
+     * Crea un usuario base desde un request.
+     * Procesa avatar/portada y asigna rol/status.
+     */
+    private function crearUsuario($request, int $rolId): User
+    {
+        $user = new User();
+        $user->nombre     = trim($request->name);
+        $user->apellido_p = $request->apellido_p ? trim($request->apellido_p) : null;
+        $user->apellido_m = $request->apellido_m ? trim($request->apellido_m) : null;
+        $user->email      = $request->email;
+        $user->password   = Hash::make($request->password);
+        $user->telefono   = $request->telefono;
+        $user->ciudad     = $request->ciudad;
+        $user->rol_id     = $rolId;
+        $user->status_id  = self::STATUS_ACTIVO;
+
+        // Archivos
+        if ($request->hasFile('avatar')) {
+            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+            Log::info('[crearUsuario] Avatar guardado', ['path' => $user->avatar]);
+        }
+
+        if ($request->hasFile('portada')) {
+            $user->portada = $request->file('portada')->store('users/portadas', 'public');
+            Log::info('[crearUsuario] Portada guardada', ['path' => $user->portada]);
+        }
+
+        $user->save();
+
+        return $user;
+    }
+
+    /**
+     * Actualiza los datos básicos del usuario desde el request.
+     * Solo actualiza los campos que vienen en el request.
+     */
+    private function actualizarDatosBasicos(User $user, Request $request): void
+    {
+        if ($request->filled('nombre')) {
+            $nombreLimpio = trim(explode(' ', trim($request->nombre))[0] ?? '');
+            if ($nombreLimpio !== '') {
+                $user->nombre = $nombreLimpio;
+            }
+        }
+
+        if ($request->filled('apellido_p')) $user->apellido_p = trim($request->apellido_p);
+        if ($request->filled('apellido_m')) $user->apellido_m = trim($request->apellido_m);
+        if ($request->filled('telefono'))   $user->telefono   = $request->telefono;
+        if ($request->filled('ciudad'))     $user->ciudad     = $request->ciudad;
+    }
+
+    /**
+     * Reemplaza avatar y portada del usuario, eliminando los anteriores.
+     */
+    private function actualizarArchivos(User $user, Request $request): void
+    {
+        if ($request->hasFile('avatar')) {
+            if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+        }
+
+        if ($request->hasFile('portada')) {
+            if ($user->portada && Storage::disk('public')->exists($user->portada)) {
+                Storage::disk('public')->delete($user->portada);
+            }
+            $user->portada = $request->file('portada')->store('users/portadas', 'public');
+        }
+    }
+
+    /**
+     * Busca un préstamo activo que bloquee la inhabilitación de cuenta.
+     */
+    private function buscarPrestamoBloqueante(int $userId)
+    {
+        return \App\Models\Prestamo::where('usuario_id', $userId)
+            ->whereIn('estado_prestamo_id', [1, 2, 3])
+            ->orderBy('id', 'desc')
+            ->first();
+    }
+
+    /**
+     * Mensaje según el estado del préstamo bloqueante.
+     */
+    private function mensajePrestamoBloqueante(int $estadoId): string
+    {
+        return match ($estadoId) {
+            1 => 'No puedes eliminar tu cuenta porque tienes un préstamo pendiente de aprobación.',
+            2 => 'No puedes eliminar tu cuenta porque tienes un préstamo aprobado (PAGOS EN PROCESO).',
+            3 => 'No puedes eliminar tu cuenta porque tienes un préstamo activo en curso.',
+            default => 'No puedes inhabilitar tu cuenta porque tienes un préstamo en proceso.',
+        };
+    }
+
+    /**
+     * Devuelve el nombre completo de un usuario.
+     */
+    private function nombreCompleto(User $user): string
+    {
+        return trim(
+            ($user->nombre ?? '') . ' ' .
+            ($user->apellido_p ?? '') . ' ' .
+            ($user->apellido_m ?? '')
+        );
+    }
+
+    /**
+     * Formato de respuesta del usuario para `register_admin`.
+     */
+    private function formatearUsuarioBasico(User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => $this->nombreCompleto($user),
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+        ];
+    }
+
+    /**
+     * Formato completo del usuario para `register`.
+     */
+    private function formatearUsuarioCompleto(User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => $this->nombreCompleto($user),
+            'apellido_p'      => $user->apellido_p,
+            'apellido_m'      => $user->apellido_m,
+            'email'           => $user->email,
+            'telefono'        => $user->telefono,
+            'ciudad'          => $user->ciudad,
+            'rol_id'          => $user->rol_id,
+            'status_id'       => $user->status_id,
+            'grupo_id'        => $user->grupo_id,
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+            'created_at'      => $user->created_at,
+        ];
+    }
+
+    /**
+     * Formato del usuario para `login`.
+     */
+    private function formatearUsuarioLogin(User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => $this->nombreCompleto($user),
+            'nombre_raw'      => $user->nombre,
+            'apellido_p'      => $user->apellido_p,
+            'apellido_m'      => $user->apellido_m,
+            'email'           => $user->email,
+            'telefono'        => $user->telefono,
+            'ciudad'          => $user->ciudad,
+            'grupo_id'        => $user->grupo_id,
+            'rol_id'          => $user->rol_id,
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+            'nombre_comercio' => $user->nombre_comercio ?? null,
+        ];
     }
 }

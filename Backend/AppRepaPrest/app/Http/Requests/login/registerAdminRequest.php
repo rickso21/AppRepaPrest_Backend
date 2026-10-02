@@ -19,10 +19,11 @@ class registerAdminRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'apellido_p' => 'required|string|max:255',
+            'apellido_p' => 'nullable|string|max:255',
             'apellido_m' => 'nullable|string|max:255',
             'email' => 'nullable|string|email|max:255|unique:tbl_user,email',
             'telefono' => 'nullable|string|max:20|unique:tbl_user,telefono',
+            'ciudad' => 'nullable|string|max:200',
             'password' => 'required|string|min:8|confirmed',
             'name_group' => 'required|string|max:255|unique:tbl_group,group_name',
         ];
