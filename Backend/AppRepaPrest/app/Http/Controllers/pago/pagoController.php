@@ -41,7 +41,7 @@ class pagoController extends Controller
             ]);
 
             $prestamo = Prestamo::where('usuario_id', $request->usuario_id)
-                ->whereIn('estado_prestamo_id', [2, 3])  // 🔑 Aprobado O Activo
+                ->whereIn('estado_prestamo_id', [2, 3])
                 ->orderBy('id', 'desc')
                 ->first();
 
@@ -147,9 +147,8 @@ class pagoController extends Controller
 
                     $isSandbox = config('app.env') !== 'production';
 
-                    $notificationUrl = $isSandbox
-                        ? 'https://thing-climatic-driller.ngrok-free.dev/verificar_pago'
-                        : 'https://tudominio.com/api/webhooks/mercadopago';
+                    $notificationUrl = config('services.mercadopago.notification_url');
+                    $frontendUrl     = rtrim(config('services.mercadopago.frontend_url'), '/');
 
                     $preferenceData = [
                         'items' => [
@@ -166,16 +165,10 @@ class pagoController extends Controller
                             'name'  => $user_token->name ?? 'Cliente',
                             'email' => $user_token->email ?? 'cliente@email.com',
                         ],
-                        'back_urls' => [
-                            'success' => $isSandbox
-                                ? 'https://thing-climatic-driller.ngrok-free.dev/pago-exitoso'
-                                : 'https://tudominio.com/pago-exitoso',
-                            'failure' => $isSandbox
-                                ? 'https://thing-climatic-driller.ngrok-free.dev/pago-fallido'
-                                : 'https://tudominio.com/pago-fallido',
-                            'pending' => $isSandbox
-                                ? 'https://thing-climatic-driller.ngrok-free.dev/pago-pendiente'
-                                : 'https://tudominio.com/pago-pendiente',
+                         'back_urls' => [
+                            'success' => "{$frontendUrl}/pago-exitoso",
+                            'failure' => "{$frontendUrl}/pago-fallido",
+                            'pending' => "{$frontendUrl}/pago-pendiente",
                         ],
                         'notification_url'   => $notificationUrl,
                         'external_reference' => (string) $pagoPendiente->id,
@@ -192,7 +185,7 @@ class pagoController extends Controller
                         'Content-Type: application/json',
                         'Accept: application/json',
                     ]);
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
                     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
                     $response = curl_exec($ch);
@@ -246,21 +239,19 @@ class pagoController extends Controller
                         'tiempo_estimado' => '24-48 horas hábiles',
                     ];
 
-                    $base_url = config('app.env') === 'production'
-                        ? 'https://www.mercadopago.com.mx'
-                        : 'https://www.mercadopago.com.mx';
 
                     return response()->json([
                         'success' => true,
                         'message' => 'Pago actualizado exitosamente',
                         'data'    => [
-                            'pago_id'           => $pagoPendiente->id,
-                            'preference_id'     => $pagoPendiente->preference_id,
-                            'init_point'        => "{$base_url}/checkout/v1/redirect?pref_id={$pagoPendiente->preference_id}",
-                            'monto'             => $pagoPendiente->monto_pagado,
-                            'prestamo_folio'    => $prestamo->folio,
-                            'es_actualizado'    => true,
-                            'datos' => [
+                            'pago_id'            => $pagoPendiente->id,
+                            'preference_id'      => $pagoPendiente->preference_id,
+                            'init_point'         => $data['init_point'],
+                            'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
+                            'monto'              => $pagoPendiente->monto_pagado,
+                            'prestamo_folio'     => $prestamo->folio,
+                            'es_actualizado'     => true,
+                            'datos'              => [
                                 'instrucciones' => $instrucciones,
                             ],
                         ],
@@ -315,9 +306,8 @@ class pagoController extends Controller
 
             $isSandbox = config('app.env') !== 'production';
 
-            $notificationUrl = $isSandbox
-                ? 'https://thing-climatic-driller.ngrok-free.dev/verificar_pago'
-                : 'https://tudominio.com/api/webhooks/mercadopago';
+            $notificationUrl = config('services.mercadopago.notification_url');
+            $frontendUrl     = rtrim(config('services.mercadopago.frontend_url'), '/');
 
             $preferenceData = [
                 'items' => [
@@ -335,15 +325,9 @@ class pagoController extends Controller
                     'email' => $user_token->email ?? 'cliente@email.com',
                 ],
                 'back_urls' => [
-                    'success' => $isSandbox
-                        ? 'https://thing-climatic-driller.ngrok-free.dev/pago-exitoso'
-                        : 'https://tudominio.com/pago-exitoso',
-                    'failure' => $isSandbox
-                        ? 'https://thing-climatic-driller.ngrok-free.dev/pago-fallido'
-                        : 'https://tudominio.com/pago-fallido',
-                    'pending' => $isSandbox
-                        ? 'https://thing-climatic-driller.ngrok-free.dev/pago-pendiente'
-                        : 'https://tudominio.com/pago-pendiente',
+                    'success' => "{$frontendUrl}/pago-exitoso",
+                    'failure' => "{$frontendUrl}/pago-fallido",
+                    'pending' => "{$frontendUrl}/pago-pendiente",
                 ],
                 'notification_url'   => $notificationUrl,
                 'external_reference' => (string) $pago->id,
@@ -360,7 +344,7 @@ class pagoController extends Controller
                 'Content-Type: application/json',
                 'Accept: application/json',
             ]);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
             $response = curl_exec($ch);
@@ -434,19 +418,13 @@ class pagoController extends Controller
                 'success' => false,
                 'message' => 'Error al crear la preferencia de pago',
                 'error'   => config('app.debug') ? $e->getMessage() : null,
-            ], 200);
+            ], 500);
         }
     }
 
 
     /**
-     * 🔑 WEBHOOK DE MERCADO PAGO
-     *
-     * Flujo corregido:
-     * 1. Asignar status_mp SIEMPRE, antes de cualquier return temprano.
-     * 2. Guardar status_mp incluso si el pago ya estaba confirmado (webhooks repetidos).
-     * 3. Re-afirmar status_mp al confirmar en el bloque 'approved'.
-     * 4. Logs para diagnosticar en producción.
+     * WEBHOOK DE MERCADO PAGO
      */
     public function verificarPago(Request $request)
     {
@@ -474,7 +452,7 @@ class pagoController extends Controller
                     'Authorization: Bearer ' . $token,
                     'Content-Type: application/json',
                 ]);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
                 curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
                 $response = curl_exec($ch);
@@ -502,10 +480,36 @@ class pagoController extends Controller
                     'transaction_amount' => $pago_mp['transaction_amount'] ?? null,
                 ]);
 
-                // ============================================
-                // 🔑 BUSCAR EL PAGO - PRIORIDAD CORRECTA
-                // ============================================
+
+                //SERVICIO DE COMERCIO PAGO
+                $externalRef = (string) ($pago_mp['external_reference'] ?? '');
+
+                if (str_starts_with($externalRef, 'ad_')) {
+                    \Log::info('[verificar_pago] Detectado pago de ANUNCIO', [
+                        'external_reference' => $externalRef,
+                        'payment_id'         => $payment_id,
+                        'status'             => $status,
+                    ]);
+
+                    $resultado = app(\App\Http\Controllers\comunidad\AdController::class)
+                        ->procesarPagoDeAnuncio($pago_mp);
+
+                    return response()->json([
+                        'success' => $resultado['procesado'],
+                        'tipo'    => 'anuncio',
+                        'status'  => $resultado['status'],
+                        'message' => $resultado['message'],
+                    ], 200);
+                }
+
+                \Log::info('[verificar_pago] Procesando como pago de PRÉSTAMO', [
+                    'external_reference' => $externalRef,
+                ]);
+
+                //BUSCAR EL PAGO - PRIORIDAD CORRECTA
                 $pago = null;
+
+
 
                 // 1. PRIMERO: Por external_reference (más confiable)
                 $pago_id = $pago_mp['external_reference'] ?? null;
@@ -565,7 +569,7 @@ class pagoController extends Controller
                 }
 
                 // ============================================
-                // 🔑 ASIGNAR status_mp ANTES DE CUALQUIER RETURN TEMPRANO
+                //ASIGNAR status_mp ANTES DE CUALQUIER RETURN TEMPRANO
                 // ============================================
                 $pago->no_pago_mp         = $payment_id;
                 $pago->fecha_verificacion = now();
@@ -577,7 +581,7 @@ class pagoController extends Controller
                 }
 
                 // ============================================
-                // 🔑 SI YA ESTABA CONFIRMADO: solo actualizar status_mp y salir
+                // SI YA ESTABA CONFIRMADO: solo actualizar status_mp y salir
                 // ============================================
                 if ($pago->status == 1) {
                     \Log::info('PAGO YA CONFIRMADO ANTERIORMENTE - actualizando status_mp', [
@@ -605,7 +609,7 @@ class pagoController extends Controller
                 ]);
 
                 // ============================================
-                // 🔑 PROCESAR SEGÚN EL STATUS DE MERCADO PAGO
+                // PROCESAR SEGÚN EL STATUS DE MERCADO PAGO
                 // ============================================
                 if ($status === 'approved') {
                     $result = $this->aplicarPagoAlPrestamo($pago);
@@ -616,8 +620,8 @@ class pagoController extends Controller
                         $pago->fecha_confirmacion = now();
                         $pago->usuario_confirmo   = $pago->usuario_id;
                         $pago->metodo_pago        = 'Mercado Pago Online';
-                        $pago->status_mp          = $status;      // 🔑 re-afirmar
-                        $pago->no_pago_mp         = $payment_id;  // 🔑 re-afirmar
+                        $pago->status_mp          = $status;
+                        $pago->no_pago_mp         = $payment_id;
                         $pago->save();
 
                         $pdfGenerado  = false;
@@ -862,7 +866,7 @@ class pagoController extends Controller
                 $pago->monto_restante     = $deuda_actual;
                 $pago->fecha_verificacion = now();
                 $pago->observaciones      = ($pago->observaciones ? $pago->observaciones . ' | ' : '') .
-                                            'Rechazado automáticamente: ' . $validacion_saldo['message'];
+                    'Rechazado automáticamente: ' . $validacion_saldo['message'];
                 $pago->save();
 
                 return [
@@ -877,9 +881,7 @@ class pagoController extends Controller
                 ];
             }
 
-            // ============================================
-            // 🔹 APLICAR PAGO
-            // ============================================
+            // APLICAR PAGO
             $nuevo_restante = $deuda_actual - $monto_pagado;
             $prestamo->monto_restante    = max(0, $nuevo_restante);
             $prestamo->pagos_realizados  = ($prestamo->pagos_realizados ?? 0) + 1;
@@ -895,7 +897,7 @@ class pagoController extends Controller
                 $prestamo_quedo_liquidado     = true;
             }
 
-            // 🔑 CALCULAR QUINCENAS COMPLETADAS POR MONTO
+            // CALCULAR QUINCENAS COMPLETADAS POR MONTO
             $this->actualizarQuincenasCompletadas($prestamo);
 
             $prestamo->save();
@@ -909,7 +911,7 @@ class pagoController extends Controller
 
             DB::commit();
 
-            // 🔑 Quincenas restantes calculadas (nunca 0 si hay saldo)
+            //Quincenas restantes calculadas (nunca 0 si hay saldo)
             $quincenas_restantes = $prestamo->monto_restante > 0
                 ? max(1, ($prestamo->numero_pagos ?? 0) - ($prestamo->quincenas_completadas ?? 0))
                 : 0;
@@ -927,7 +929,7 @@ class pagoController extends Controller
                 ],
             ];
         } catch (\Exception $e) {
-            // 🔹 Evitar "There is no active transaction"
+            // Evitar "There is no active transaction"
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
@@ -1004,7 +1006,7 @@ class pagoController extends Controller
     }
 
     /**
-     * 🔑 Calcula y actualiza las quincenas completadas según el monto pagado.
+     * Calcula y actualiza las quincenas completadas según el monto pagado.
      *
      * Regla:
      * - Se calcula por monto acumulado, no por conteo de abonos.

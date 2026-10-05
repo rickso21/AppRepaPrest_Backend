@@ -80,8 +80,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/grupo/{id}', [loginController::class, 'show_grupo']);
     Route::delete('/user/delete-account', [loginController::class, 'delete_account']);
-    Route::middleware('auth:sanctum')->post('/admin/user/reactivate', [loginController::class, 'reactivate_account']);
-
+    Route::post('/admin/user/reactivate', [loginController::class, 'reactivate_account']);
     Route::post('/change-password', [passwordController::class, 'cambiar_password']);
 
     // comunidad
@@ -117,7 +116,6 @@ Route::post('/admin/register', [adminController::class, 'index']);
 Route::post('/forgot-password', [passwordController::class, 'olvide_password'])
     ->middleware('throttle:3,1');
 Route::post('/new-password', [passwordController::class, 'nueva_password']);
-Route::post('/ads/webhook', [AdController::class, 'webhook']);
 // Pagos
 Route::post('/verificar_pago', [pagoController::class, 'verificarPago']);
 
