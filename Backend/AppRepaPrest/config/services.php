@@ -29,15 +29,18 @@ return [
     ],
 
     'mercadopago' => [
-        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
-        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
-        'notification_url' => env('MERCADOPAGO_NOTIFICATION_URL'),
-        'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
+    // URL del webhook (donde MP notifica) → siempre a la API
+    'notification_url' => env('MERCADOPAGO_NOTIFICATION_URL', env('APP_URL') . '/verificar_pago'),
 
-        // Opcional: para ambiente de pruebas
-        'sandbox_mode' => env('MERCADOPAGO_SANDBOX_MODE', true),
-    ],
+    // URL base del frontend (a donde regresa el usuario tras pagar)
+    'frontend_url' => env('FRONTEND_URL', 'https://deliverysobreruedas.com'),
 
+    // URL base del backend (para webhooks de ads y otros)
+    'backend_url' => env('APP_URL', 'https://api.deliverysobreruedas.com'),
+
+    // URL de ngrok (solo para desarrollo local)
+    'sandbox_url' => env('MERCADOPAGO_SANDBOX_URL', 'https://thing-climatic-driller.ngrok-free.dev'),
+],
     'banco' => [
         'nombre' => env('BANCO_NOMBRE', 'BBVA Bancomer'),
         'clabe' => env('BANCO_CLABE', '012180004123456789'),
