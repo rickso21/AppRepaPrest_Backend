@@ -15,26 +15,22 @@ class CommentCreated implements ShouldBroadcastNow
 
     public function __construct(public Comment $comment)
     {
-         \Log::info('[CommentCreated] Evento instanciado', [
-        'comment_id' => $comment->id,
-        'post_id' => $comment->post_id,
-        'user_id' => $comment->user_id,
-        'timestamp' => now()->toISOString(),
-    ]);
+        \Log::info('[CommentCreated] Evento instanciado', [
+            'comment_id' => $comment->id,
+            'post_id' => $comment->post_id,
+            'user_id' => $comment->user_id,
+            'timestamp' => now()->toISOString(),
+        ]);
     }
 
     public function broadcastOn(): array
     {
-        // Obtener el grupo del post asociado al comentario
         $groupId = $this->comment->post?->group_id;
-
-          \Log::info('[CommentCreated] broadcastOn llamado', [
-        'comment_id' => $this->comment->id,
-    ]);
+        $canalId = \App\Models\Grupo::canalPrincipalDe((int) $groupId);
 
         return [
-            new PrivateChannel('group.' . $groupId),
-              new PrivateChannel('global'),
+            new PrivateChannel('group.' . $canalId),
+            new PrivateChannel('global'),
         ];
     }
 

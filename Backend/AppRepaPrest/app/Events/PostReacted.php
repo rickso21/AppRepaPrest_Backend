@@ -46,16 +46,9 @@ class PostReacted implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         $groupId = Post::find($this->postId)?->group_id;
+        $canalId = \App\Models\Grupo::canalPrincipalDe((int) $groupId);
 
-        \Log::info('[PostReacted] broadcastOn llamado', [
-            'post_id'  => $this->postId,
-            'groupId'  => $groupId,
-            'canal'    => 'group.' . $groupId,
-        ]);
-
-        return [
-            new PrivateChannel('group.' . $groupId),
-        ];
+        return [new PrivateChannel('group.' . $canalId)];
     }
 
     public function broadcastAs(): string

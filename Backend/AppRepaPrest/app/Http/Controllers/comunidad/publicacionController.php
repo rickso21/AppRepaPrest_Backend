@@ -11,6 +11,8 @@ use App\Http\Requests\comunidad\savePublishRequest;
 use App\Models\Post;
 use App\Models\PostReaction;
 use Illuminate\Http\Request;
+use App\Models\User;
+use App\Notifications\NewPostPublished;
 
 class publicacionController extends Controller
 {
@@ -46,19 +48,36 @@ class publicacionController extends Controller
         $query = Post::where('activo', 1);
 
         if ($scope === 'group') {
-            $query->where('group_id', $user_token->grupo_id)
-                ->whereHas('user', fn($q) => $q->where('status_id', 1));
+            // Grupos visibles: principal + emergencia + monitoreo
+            $gruposVisibles = $this->gruposVisiblesDe($user_token);
+
+            // Si el front envía un group_id específico, filtramos SOLO por ese
+            $grupoFiltro = $request->input('group_id');
+
+            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+                $query->where('group_id', (int) $grupoFiltro);
+            } else {
+                // Fallback: todos los grupos visibles (comportamiento anterior)
+                $query->whereIn('group_id', $gruposVisibles);
+            }
+
+            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
         } else {
 
-            $query->whereHas('user', fn($q) => $q->whereNotNull('id'));
+            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+                ->pluck('id')
+                ->all();
+
+            $query->whereIn('group_id', $idsPrincipales)
+                ->whereHas('user', fn($q) => $q->where('status_id', 1));
         }
 
         $posts = $query->orderBy('created_at', 'desc')->get();
 
 
-       $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
-    return $this->formatearPost($post, $user_token, $scope);
-});
+        $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
+            return $this->formatearPost($post, $user_token, $scope);
+        });
 
         return response()->json([
             'res'           => true,
@@ -77,6 +96,17 @@ class publicacionController extends Controller
             return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
+        // 👇 PRIMERO validar permisos
+        $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
+
+        if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No tienes permiso para publicar en ese grupo',
+            ], 403);
+        }
+
+        // 👇 DESPUÉS guardar archivos
         $post = new Post();
 
         if ($request->hasFile('img')) {
@@ -95,19 +125,49 @@ class publicacionController extends Controller
             );
         }
 
+        if ($request->hasFile('audio')) {
+            $post->audio = $this->guardarArchivo(
+                $request->file('audio'),
+                'audio/publish',
+                time() . '_' . $user_token->id . '_audio'
+            );
+        }
+
+        // El cliente puede enviar group_id opcional. Si no viene, va al principal.
+        $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
+
+        if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No tienes permiso para publicar en ese grupo',
+            ], 403);
+        }
+
         // 3. Guardar post
         $post->post     = $request->txt;
         $post->user_id  = $user_token->id;
-        $post->group_id = $user_token->grupo_id;
+        //$post->group_id = $user_token->grupo_id;
+        $post->group_id = $groupDestino;
         $post->activo   = 1;
 
         try {
             $post->save();
+            // Notificar a los demás miembros del grupo (excepto al autor)
+            User::where('grupo_id', $post->group_id)
+                ->where('id', '!=', $post->user_id)
+                ->whereNotNull('expo_push_token')      // 👈 filtro clave
+                ->where('expo_push_token', '!=', '')   // 👈 por si hay strings vacíos
+                ->get()
+                ->each(function ($user) use ($post) {
+                    $user->notify(new NewPostPublished($post));
+                });
 
             \Log::info('[publicacion.store] Post guardado', [
                 'id'    => $post->id,
                 'image' => $post->image,
                 'video' => $post->video,
+                'audio' => $post->audio,
+
             ]);
 
             broadcast(new PostCreated($post))->toOthers();
@@ -165,6 +225,14 @@ class publicacionController extends Controller
                     $request->file('video'),
                     'img/publish',
                     time() . '_' . $user_token->id . '_video'
+                );
+            }
+
+            if ($request->hasFile('audio')) {
+                $post->audio = $this->guardarArchivo(
+                    $request->file('audio'),
+                    'audio/publish',
+                    time() . '_' . $user_token->id . '_audio'
                 );
             }
 
@@ -245,10 +313,9 @@ class publicacionController extends Controller
 
         $post = Post::find($id);
 
-        if (!$post || $post->group_id !== $user->grupo_id) {
+        if (!$post || !$this->usuarioPuedePublicarEn($user, (int) $post->group_id)) {
             return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
         }
-
         $existente    = PostReaction::where('post_id', $id)
             ->where('user_id', $user->id)
             ->first();
@@ -287,53 +354,54 @@ class publicacionController extends Controller
     // ================================================================
 
     private function formatearPost(Post $post, $user_token, string $scope = 'group'): array
-{
-    $comentarios = $post->comments()
-        ->where('activo', 1)
-        ->whereHas('user', fn($q) => $q->where('status_id', 1))
-        ->get()
-        ->map(fn($c) => $this->formatearComentario($c, $scope))   // 👈 pasar scope
-        ->toArray();
+    {
+        $comentarios = $post->comments()
+            ->where('activo', 1)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1))
+            ->get()
+            ->map(fn($c) => $this->formatearComentario($c, $scope))   // 👈 pasar scope
+            ->toArray();
 
-    $reacciones = $this->contarReacciones($post, $user_token->id);
+        $reacciones = $this->contarReacciones($post, $user_token->id);
 
-    $autor = $post->user;
+        $autor = $post->user;
 
-    $nombreAutor = $this->nombrePublico($autor, $scope);
+        $nombreAutor = $this->nombrePublico($autor, $scope);
 
-    if ($scope === 'group') {
-        $user_data = [
-            'id'         => $autor->id,
-            'nombre'     => $nombreAutor,
-            'avatar_url' => $autor->avatar_url ?? null,
-        ];
-    } else {
-        // En global: sin id, sin avatar (para no exponer identidad)
-        $user_data = [
-            'nombre'     => $nombreAutor,
-            'avatar_url' => $autor->avatar_url ?? null,
+        if ($scope === 'group') {
+            $user_data = [
+                'id'         => $autor->id,
+                'nombre'     => $nombreAutor,
+                'avatar_url' => $autor->avatar_url ?? null,
+            ];
+        } else {
+            // En global: sin id, sin avatar (para no exponer identidad)
+            $user_data = [
+                'nombre'     => $nombreAutor,
+                'avatar_url' => $autor->avatar_url ?? null,
+            ];
+        }
+
+        return [
+            'id'      => $post->id,
+            'user_id' => $scope === 'group' ? $post->user_id : null,
+            'post'    => $post->post,
+            'image'   => $post->image,
+            'video'   => $post->video,
+            'audio'   => $post->audio,
+            'user'    => $nombreAutor,
+
+            'user_data' => $user_data,
+
+            'fecha'       => $post->created_at->format('d/m/Y'),
+            'hora'        => $post->created_at->format('H:i'),
+            'comentarios' => $comentarios,
+            'reacciones'  => $reacciones['counts'],
+            'mi_reaccion' => $reacciones['mi_reaccion'],
+
+            'links' => $this->extraerLinksDetectados($post->post),
         ];
     }
-
-    return [
-        'id'      => $post->id,
-        'user_id' => $scope === 'group' ? $post->user_id : null,
-        'post'    => $post->post,
-        'image'   => $post->image,
-        'video'   => $post->video,
-        'user'    => $nombreAutor,
-
-        'user_data' => $user_data,
-
-        'fecha'       => $post->created_at->format('d/m/Y'),
-        'hora'        => $post->created_at->format('H:i'),
-        'comentarios' => $comentarios,
-        'reacciones'  => $reacciones['counts'],
-        'mi_reaccion' => $reacciones['mi_reaccion'],
-
-        'links' => $this->extraerLinksDetectados($post->post),
-    ];
-}
 
     /**
      * Formatea un post recién creado.
@@ -348,6 +416,7 @@ class publicacionController extends Controller
             'post'    => $post->post,
             'image'   => $post->image,
             'video'   => $post->video,
+            'audio'   => $post->audio,
             'user'    => $nombreAutor,
 
             'user_data' => [
@@ -370,19 +439,19 @@ class publicacionController extends Controller
      * Formatea un comentario.
      */
     private function formatearComentario($comment, string $scope = 'group'): array
-{
-    $autor = $comment->user;
+    {
+        $autor = $comment->user;
 
-    $nombreAutor = $this->nombrePublico($autor, $scope);
+        $nombreAutor = $this->nombrePublico($autor, $scope);
 
-    return [
-        'nombre'     => $nombreAutor,
-        'comentario' => $comment->comment,
-        'fecha'      => $comment->created_at->format('d/m/Y'),
-        'hora'       => $comment->created_at->format('H:i'),
-        'avatar_url' => $scope === 'group' ? ($autor->avatar_url ?? null) : null,
-    ];
-}
+        return [
+            'nombre'     => $nombreAutor,
+            'comentario' => $comment->comment,
+            'fecha'      => $comment->created_at->format('d/m/Y'),
+            'hora'       => $comment->created_at->format('H:i'),
+            'avatar_url' => $scope === 'group' ? ($autor->avatar_url ?? null) : null,
+        ];
+    }
 
     /**
      * Cuenta las reacciones de un post.
@@ -500,17 +569,44 @@ class publicacionController extends Controller
     }
 
     /**
- * Devuelve el nombre del usuario según el scope.
- *
- * - scope = "group"  → nombre completo (nombre + apellidos)
- * - scope = "global" → solo el primer nombre (privacidad)
- */
-private function nombrePublico($user, string $scope = 'group'): string
-{
-    if ($scope === 'global') {
-        return trim($user->nombre ?? 'Usuario');
+     * Devuelve el nombre del usuario según el scope.
+     *
+     * - scope = "group"  → nombre completo (nombre + apellidos)
+     * - scope = "global" → solo el primer nombre (privacidad)
+     */
+    private function nombrePublico($user, string $scope = 'group'): string
+    {
+        if ($scope === 'global') {
+            return trim($user->nombre ?? 'Usuario');
+        }
+
+        return $this->nombreCompleto($user);
     }
 
-    return $this->nombreCompleto($user);
-}
+    /**
+     * Devuelve los IDs de grupos a los que el usuario puede acceder:
+     * su grupo principal y el grupo de emergencias (si existe).
+     */
+    private function gruposVisiblesDe($user): array
+    {
+        if (!$user->grupo_id) {
+            return [];
+        }
+
+        return \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+    }
+
+    /**
+     * Valida que el usuario pueda publicar en el grupo indicado:
+     * - Debe ser su grupo principal, o
+     * - El grupo de emergencias cuyo padre es su principal.
+     */
+    private function usuarioPuedePublicarEn($user, int $grupoId): bool
+    {
+        if (!$user->grupo_id) return false;
+
+        $visibles = \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+
+        return in_array($grupoId, $visibles, true);
+    }
 }

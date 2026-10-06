@@ -8,7 +8,7 @@ class Comment extends Model
     protected $table = 'tbl_comments';
 
     protected $fillable = [
-        'comment', 'post_id', 'user_id', 'activo'
+        'comment','audio', 'post_id', 'user_id', 'activo'
     ];
 
     public function user()

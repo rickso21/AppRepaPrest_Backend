@@ -59,29 +59,71 @@ class loginController extends Controller
 
             $user = $this->crearUsuario($request, self::ROL_ADMIN);
 
-            // Crear grupo con el nuevo admin como líder
-            $grupo = new Grupo();
-            $grupo->code           = $codigo;
-            $grupo->group_name     = $request->name_group;
-            $grupo->user_leader_id = $user->id;
-            $grupo->status         = 1;
-            $grupo->save();
 
-            $user->grupo_id = $grupo->id;
+            // Grupo PRINCIPAL
+            $idPrincipal  = Grupo::generarIdUnico();
+            $idEmergencia = Grupo::generarIdUnico();
+            $idMonitoreo  = Grupo::generarIdUnico();
+
+            // Grupo PRINCIPAL
+            $grupoPrincipal = new Grupo();
+            $grupoPrincipal->id             = $idPrincipal;
+            $grupoPrincipal->code           = $codigo;
+            $grupoPrincipal->group_name     = $request->name_group;
+            $grupoPrincipal->user_leader_id = $user->id;
+            $grupoPrincipal->status         = 1;
+            $grupoPrincipal->parent_id      = null;
+            $grupoPrincipal->tipo_grupo     = Grupo::TIPO_PRINCIPAL;
+            $grupoPrincipal->save();
+
+            // Grupo EMERGENCIAS
+            $grupoEmergencia = new Grupo();
+            $grupoEmergencia->id             = $idEmergencia;
+            $grupoEmergencia->code           = null;
+            $grupoEmergencia->group_name     = ($request->name_group ?? 'Grupo') . ' - EMERGENCIAS';
+            $grupoEmergencia->user_leader_id = $user->id;
+            $grupoEmergencia->status         = 1;
+            $grupoEmergencia->parent_id      = $grupoPrincipal->id;
+            $grupoEmergencia->tipo_grupo     = Grupo::TIPO_EMERGENCIA;
+            $grupoEmergencia->save();
+
+            // Grupo MONITOREO
+            $grupoMonitoreo = new Grupo();
+            $grupoMonitoreo->id             = $idMonitoreo;
+            $grupoMonitoreo->code           = null;
+            $grupoMonitoreo->group_name     = ($request->name_group ?? 'Grupo') . ' - MONITOREO';
+            $grupoMonitoreo->user_leader_id = $user->id;
+            $grupoMonitoreo->status         = 1;
+            $grupoMonitoreo->parent_id      = $grupoPrincipal->id;
+            $grupoMonitoreo->tipo_grupo     = Grupo::TIPO_MONITOREO;
+            $grupoMonitoreo->save();
+
+            $user->grupo_id = $grupoPrincipal->id;
             $user->save();
 
             DB::commit();
 
             return response()->json([
-                'res'  => true,
-                'msg'  => 'Se generó el usuario con éxito',
-                'code' => $codigo,
+                'res'             => true,
+                'msg'             => 'Se generó el usuario con éxito',
+                'code'            => $codigo,
+                'grupo_principal' => [
+                    'id'   => $grupoPrincipal->id,
+                    'name' => $grupoPrincipal->group_name,
+                ],
+                'grupo_emergencia' => [
+                    'id'   => $grupoEmergencia->id,
+                    'name' => $grupoEmergencia->group_name,
+                ],
+                'grupo_monitoreo' => [
+                    'id'   => $grupoMonitoreo->id,
+                    'name' => $grupoMonitoreo->group_name,
+                ],
                 'user' => $this->formatearUsuarioBasico($user),
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
-            Log::error('[register_admin] Error: ' . $th->getMessage());
+            //Log::error('[register_admin] Error: ' . $th->getMessage());
 
             return response()->json([
                 'res' => false,
@@ -95,31 +137,38 @@ class loginController extends Controller
     {
         try {
             // Buscar grupo por código
-            $grupo = Grupo::where('code', $request->code)->first();
+            // Solo debe encontrar la PRINCIPAL (parent_id NULL)
+            $grupoPrincipal = Grupo::where('code', $request->code)
+                ->whereNull('parent_id')
+                ->where('tipo_grupo', Grupo::TIPO_PRINCIPAL)
+                ->first();
 
-            if (!$grupo) {
-                return response()->json([
-                    'res' => false,
-                    'msg' => 'El código de grupo no es válido',
-                ], 404);
+            if (!$grupoPrincipal) {
+                return response()->json(['res' => false, 'msg' => 'El código de grupo no es válido'], 404);
             }
 
-            if ($grupo->status != 1) {
-                return response()->json([
-                    'res' => false,
-                    'msg' => 'El grupo no está activo',
-                ], 403);
+            if ($grupoPrincipal->status != 1) {
+                return response()->json(['res' => false, 'msg' => 'El grupo no está activo'], 403);
             }
 
             DB::beginTransaction();
 
             $user = $this->crearUsuario($request, self::ROL_USER);
-            $user->grupo_id = $grupo->id;
+            $user->grupo_id = $grupoPrincipal->id;
             $user->save();
 
             DB::commit();
 
             $user->load(['configuracionPanico', 'estadoRepartidor']);
+
+            // Derivamos los subgrupos
+            $grupoEmergencia = Grupo::where('parent_id', $grupoPrincipal->id)
+                ->where('tipo_grupo', Grupo::TIPO_EMERGENCIA)
+                ->first();
+
+            $grupoMonitoreo = Grupo::where('parent_id', $grupoPrincipal->id)
+                ->where('tipo_grupo', Grupo::TIPO_MONITOREO)
+                ->first();
 
             return response()->json([
                 'res'     => true,
@@ -129,9 +178,13 @@ class loginController extends Controller
                     'usuario'       => $this->formatearUsuarioCompleto($user),
                     'configuracion' => $user->configuracionPanico,
                     'estado'        => $user->estadoRepartidor,
+                    'grupos'        => [
+                        'principal'  => ['id' => $grupoPrincipal->id,  'name' => $grupoPrincipal->group_name],
+                        'emergencia' => $grupoEmergencia ? ['id' => $grupoEmergencia->id, 'name' => $grupoEmergencia->group_name] : null,
+                        'monitoreo'  => $grupoMonitoreo  ? ['id' => $grupoMonitoreo->id,  'name' => $grupoMonitoreo->group_name]  : null,
+                    ],
                 ],
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[register] Error: ' . $th->getMessage(), [
@@ -177,7 +230,6 @@ class loginController extends Controller
                     'rol_id'          => $user->rol_id,
                 ],
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[register_comercio] Error: ' . $th->getMessage());
@@ -314,7 +366,6 @@ class loginController extends Controller
                     'portada_url'     => $user->portada_url,
                 ],
             ], 200);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[edit_user] Error: ' . $th->getMessage());
@@ -345,15 +396,17 @@ class loginController extends Controller
         return response()->json([
             'res'  => true,
             'user' => [
-                'id'          => $user->id,
-                'nombre'      => $this->nombreCompleto($user),
-                'telefono'    => $user->telefono,
-                'email'       => $user->email,
-                'ciudad'      => $user->ciudad,
-                'avatar_url'  => $user->avatar_url,
-                'portada_url' => $user->portada_url,
-                'rol'         => $user->rol_id,
-                'grupo'       => $user->grupo->group_name ?? null,
+                'id'                 => $user->id,
+                'nombre'             => $this->nombreCompleto($user),
+                'telefono'           => $user->telefono,
+                'email'              => $user->email,
+                'ciudad'             => $user->ciudad,
+                'avatar_url'         => $user->avatar_url,
+                'portada_url'        => $user->portada_url,
+                'rol'                => $user->rol_id,
+                'grupo'              => $user->grupo->group_name ?? null,
+                'grupo_id'           => $user->grupo_id,
+                'grupo_principal_id' => $user->grupo->parent_id ?? $user->grupo_id,
             ],
         ], 200);
     }
@@ -367,18 +420,21 @@ class loginController extends Controller
      */
     public function show_grupo(Request $request, $id)
     {
-        $grupo = Grupo::find($id);
+        $grupo = Grupo::with(['emergencia', 'monitoreo'])->find($id);
 
         if (!$grupo) {
             return response()->json(['res' => false, 'msg' => 'Grupo no encontrado'], 404);
         }
 
-        // Buscar admin del grupo
+        // Si llegan con el ID de un subgrupo, subimos al principal
+        if (!is_null($grupo->parent_id)) {
+            $grupo = Grupo::with(['emergencia', 'monitoreo'])->find($grupo->parent_id);
+        }
+
         $adminGrupo = User::where('grupo_id', $grupo->id)
             ->where('rol_id', self::ROL_SUPER_ADMIN)
             ->first();
 
-        // Fallback: usar el líder del grupo
         if (!$adminGrupo && $grupo->user_leader_id) {
             $adminGrupo = User::find($grupo->user_leader_id);
         }
@@ -398,9 +454,21 @@ class loginController extends Controller
                     'portada_url' => $adminGrupo->portada_url,
                     'avatar_url'  => $adminGrupo->avatar_url,
                 ] : null,
+                'grupo_emergencia' => $grupo->emergencia ? [
+                    'id'         => $grupo->emergencia->id,
+                    'group_name' => $grupo->emergencia->group_name,
+                    'status'     => $grupo->emergencia->status,
+                ] : null,
+                'grupo_monitoreo' => $grupo->monitoreo ? [
+                    'id'         => $grupo->monitoreo->id,
+                    'group_name' => $grupo->monitoreo->group_name,
+                    'status'     => $grupo->monitoreo->status,
+                ] : null,
             ],
         ], 200);
     }
+
+
 
     // ================================================================
     // GESTIÓN DE CUENTA
@@ -467,7 +535,6 @@ class loginController extends Controller
                 'res' => true,
                 'msg' => 'Tu cuenta ha sido inhabilitada. Si deseas reactivarla, contacta a soporte.',
             ], 200);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[delete_account] Error: ' . $th->getMessage());
@@ -524,6 +591,67 @@ class loginController extends Controller
         ], 200);
     }
 
+
+    /**
+     * GET /api/grupo/{id}/miembros
+     * Devuelve los miembros del grupo (principal o emergencias).
+     */
+    public function miembros_grupo(Request $request, $id)
+    {
+        $grupo = Grupo::find($id);
+
+        if (!$grupo) {
+            return response()->json(['res' => false, 'msg' => 'Grupo no encontrado'], 404);
+        }
+
+        // Si es emergencia, subimos al principal
+        if (!is_null($grupo->parent_id)) {
+            $grupo = Grupo::find($grupo->parent_id);
+        }
+
+        $miembros = User::where('grupo_id', $grupo->id)
+            ->where('status_id', self::STATUS_ACTIVO)
+            ->get()
+            ->map(fn($u) => [
+                'id'         => $u->id,
+                'nombre'     => $this->nombreCompleto($u),
+                'avatar_url' => $u->avatar_url,
+                'telefono'   => $u->telefono,
+                'rol_id'     => $u->rol_id,
+            ]);
+
+        return response()->json([
+            'res'      => true,
+            'grupo_id' => $grupo->id,
+            'total'    => $miembros->count(),
+            'miembros' => $miembros,
+        ], 200);
+    }
+
+
+     public function savePushToken(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Usuario no autenticado',
+            ], 401);
+        }
+
+        $request->validate([
+            'expo_push_token' => 'required|string|max:255',
+        ]);
+
+        $user->expo_push_token = $request->expo_push_token;
+        $user->save();
+
+        return response()->json([
+            'res' => true,
+            'msg' => 'Token guardado correctamente',
+        ], 200);
+    }
     // ================================================================
     // HELPERS PRIVADOS
     // ================================================================
@@ -631,8 +759,8 @@ class loginController extends Controller
     {
         return trim(
             ($user->nombre ?? '') . ' ' .
-            ($user->apellido_p ?? '') . ' ' .
-            ($user->apellido_m ?? '')
+                ($user->apellido_p ?? '') . ' ' .
+                ($user->apellido_m ?? '')
         );
     }
 

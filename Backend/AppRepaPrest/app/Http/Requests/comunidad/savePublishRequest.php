@@ -27,7 +27,8 @@ class savePublishRequest extends FormRequest
             'txt'   => 'nullable|string|max:5000',
             'img'   => 'nullable|file|image|max:20480',              // 20 MB
             'video' => 'nullable|file|mimes:mp4,mov,avi,webm,mkv|max:512000',
-        ];
+            'audio'    => 'nullable|file|max:10240',
+         ];
     }
     public function messages()
     {

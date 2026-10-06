@@ -22,11 +22,10 @@ class PostCreated implements ShouldBroadcastNow
      * Canal privado por grupo.
      */
     public function broadcastOn(): array
-    {
-        return [
-            new PrivateChannel('group.' . $this->post->group_id),
-        ];
-    }
+{
+    $canalId = \App\Models\Grupo::canalPrincipalDe((int) $this->post->group_id);
+    return [ new PrivateChannel('group.' . $canalId) ];
+}
 
     /**
      * Nombre del evento tal como lo escuchará el front (Echo.listen('PostCreated')).

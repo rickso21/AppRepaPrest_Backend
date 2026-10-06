@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Actualizar datos del usuario
     Route::match(['post', 'put'], '/update', [loginController::class, 'edit_user']);
     Route::get('/user/{id}', [loginController::class, 'show_user']);
+    Route::post('/user/push-token', [loginController::class, 'savePushToken']);
 
     // solicita prestamo
     Route::get('/solicita-user', [prestamoController::class, 'solicitar_credito']);
@@ -82,6 +83,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/user/delete-account', [loginController::class, 'delete_account']);
     Route::post('/admin/user/reactivate', [loginController::class, 'reactivate_account']);
     Route::post('/change-password', [passwordController::class, 'cambiar_password']);
+    Route::get('/grupo/{id}/miembros', [loginController::class, 'miembros_grupo']);
+
 
     // comunidad
     Route::prefix('publication')->group(function () {
