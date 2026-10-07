@@ -154,11 +154,14 @@ class publicacionController extends Controller
             $post->save();
             // Notificar a los demás miembros del grupo (excepto al autor)
             User::where('grupo_id', $post->group_id)
-                ->where('id', '!=', $post->user_id)
-                ->get()
-                ->each(function ($user) use ($post) {
-                    $user->notify(new NewPostPublished($post));
-                });
+            ->where('id', '!=', $post->user_id)
+            ->whereNotNull('expo_push_token')
+            ->where('expo_push_token', '!=', '')
+            ->get()
+            ->filter(fn($user) => !empty(trim($user->expo_push_token)))
+            ->each(function ($user) use ($post) {
+                $user->notify(new NewPostPublished($post));
+            });
 
             \Log::info('[publicacion.store] Post guardado', [
                 'id'    => $post->id,
