@@ -76,8 +76,9 @@ class publicacionController extends Controller
 
     // 👇 Formatear SIN consultas extra
     $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
-        return $this->formatearPostOptimizado($post, $user_token, $scope);
-    });
+    return $this->formatearPost($post, $user_token, $scope);  // ✅ usa el existente
+});
+
 
     return response()->json([
         'res'           => true,
