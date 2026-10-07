@@ -31,63 +31,62 @@ class publicacionController extends Controller
 
 
     public function index(Request $request)
-{
-    $user_token = $request->user();
+    {
+        $user_token = $request->user();
 
-    if (!$user_token) {
-        return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
-    }
-
-    $scope = $request->input('scope', 'group');
-    if (!in_array($scope, ['group', 'global'])) {
-        $scope = 'group';
-    }
-
-    // 👇 EAGER LOADING optimizado
-    $query = Post::with([
-        'user',        // autor del post
-        'comments' => function ($q) {
-            // Cargar comentarios activos + su usuario en una sola query anidada
-            $q->where('activo', 1)->with('user');
-        },
-        'reactions',   // reacciones del post
-    ])->where('activo', 1);
-
-    if ($scope === 'group') {
-        $gruposVisibles = $this->gruposVisiblesDe($user_token);
-        $grupoFiltro = $request->input('group_id');
-
-        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-            $query->where('group_id', (int) $grupoFiltro);
-        } else {
-            $query->whereIn('group_id', $gruposVisibles);
+        if (!$user_token) {
+            return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
-        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
-    } else {
-        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-            ->pluck('id')->all();
-        $query->whereIn('group_id', $idsPrincipales)
-              ->whereHas('user', fn($q) => $q->where('status_id', 1));
+        $scope = $request->input('scope', 'group');
+
+        if (!in_array($scope, ['group', 'global'])) {
+            $scope = 'group';
+        }
+
+
+        $query = Post::where('activo', 1);
+
+        if ($scope === 'group') {
+            // Grupos visibles: principal + emergencia + monitoreo
+            $gruposVisibles = $this->gruposVisiblesDe($user_token);
+
+            // Si el front envía un group_id específico, filtramos SOLO por ese
+            $grupoFiltro = $request->input('group_id');
+
+            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+                $query->where('group_id', (int) $grupoFiltro);
+            } else {
+                // Fallback: todos los grupos visibles (comportamiento anterior)
+                $query->whereIn('group_id', $gruposVisibles);
+            }
+
+            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+        } else {
+
+            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+                ->pluck('id')
+                ->all();
+
+            $query->whereIn('group_id', $idsPrincipales)
+                ->whereHas('user', fn($q) => $q->where('status_id', 1));
+        }
+
+        $posts = $query->orderBy('created_at', 'desc')->get();
+
+
+        $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
+            return $this->formatearPost($post, $user_token, $scope);
+        });
+
+        return response()->json([
+            'res'           => true,
+            'grupo'         => $user_token->grupo->group_name,
+            'scope'         => $scope,
+            'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
+            'publicaciones' => $publicaciones,
+        ], 200);
     }
-
-    // 👇 LIMIT para no traer 500 posts de golpe
-    $posts = $query->orderBy('created_at', 'desc')->limit(30)->get();
-
-    // 👇 Formatear SIN consultas extra
-    $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
-    return $this->formatearPost($post, $user_token, $scope);  // ✅ usa el existente
-});
-
-
-    return response()->json([
-        'res'           => true,
-        'grupo'         => $user_token->grupo->group_name,
-        'scope'         => $scope,
-        'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
-        'publicaciones' => $publicaciones,
-    ], 200);
-}
 
     public function store(savePublishRequest $request)
     {
@@ -355,26 +354,19 @@ class publicacionController extends Controller
     // ================================================================
 
     private function formatearPost(Post $post, $user_token, string $scope = 'group'): array
-{
-    // ✅ Ya viene precargado desde el eager loading
-    $comentarios = $post->comments
-        ->filter(fn($c) => $c->user && (int) $c->user->status_id === 1)
-        ->map(fn($c) => $this->formatearComentario($c, $scope))
-        ->values()
-        ->toArray();
+    {
+        $comentarios = $post->comments()
+            ->where('activo', 1)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1))
+            ->get()
+            ->map(fn($c) => $this->formatearComentario($c, $scope))   // 👈 pasar scope
+            ->toArray();
 
-    // ✅ Reacciones ya cargadas, contar en memoria
-    $counts = self::REACCIONES_VACIAS;
-    $miReaccion = null;
-    foreach ($post->reactions as $r) {
-        if (isset($counts[$r->type])) $counts[$r->type]++;
-        if ($r->user_id === $user_token->id) $miReaccion = $r->type;
-    }
-    $reacciones = ['counts' => $counts, 'mi_reaccion' => $miReaccion];
+        $reacciones = $this->contarReacciones($post, $user_token->id);
 
-    // ✅ Autor ya cargado
-    $autor = $post->user;
-    $nombreAutor = $this->nombrePublico($autor, $scope);
+        $autor = $post->user;
+
+        $nombreAutor = $this->nombrePublico($autor, $scope);
 
         if ($scope === 'group') {
             $user_data = [
@@ -617,5 +609,4 @@ class publicacionController extends Controller
 
         return in_array($grupoId, $visibles, true);
     }
-
 }
