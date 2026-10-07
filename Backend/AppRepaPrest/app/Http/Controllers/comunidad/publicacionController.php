@@ -11,7 +11,6 @@ use App\Http\Requests\comunidad\savePublishRequest;
 use App\Models\Post;
 use App\Models\PostReaction;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Notifications\NewPostPublished;
 
@@ -30,132 +29,65 @@ class publicacionController extends Controller
         'angry' => 0,
     ];
 
-    /** TTL del caché en segundos */
-    private const CACHE_TTL = 30;
 
-    /** Cache de grupos visibles por petición */
-    private ?array $gruposVisiblesCache = null;
-
-    // ================================================================
-    // INDEX
-    // ================================================================
     public function index(Request $request)
-    {
-        $user_token = $request->user();
+{
+    $user_token = $request->user();
 
-        if (!$user_token) {
-            return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
-        }
+    if (!$user_token) {
+        return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
+    }
 
-        $scope = $request->input('scope', 'group');
-        if (!in_array($scope, ['group', 'global'])) {
-            $scope = 'group';
-        }
+    $scope = $request->input('scope', 'group');
+    if (!in_array($scope, ['group', 'global'])) {
+        $scope = 'group';
+    }
 
+    // 👇 EAGER LOADING optimizado
+    $query = Post::with([
+        'user',        // autor del post
+        'comments' => function ($q) {
+            // Cargar comentarios activos + su usuario en una sola query anidada
+            $q->where('activo', 1)->with('user');
+        },
+        'reactions',   // reacciones del post
+    ])->where('activo', 1);
+
+    if ($scope === 'group') {
+        $gruposVisibles = $this->gruposVisiblesDe($user_token);
         $grupoFiltro = $request->input('group_id');
 
-        // 👇 Clave de caché única por usuario + scope + grupo
-        $cacheKey = $this->buildCacheKey($user_token, $scope, $grupoFiltro);
-
-        // 👇 Intentar obtener del caché. Si no existe, ejecuta el closure y guarda el resultado
-        $publicaciones = Cache::remember(
-            $cacheKey,
-            self::CACHE_TTL,
-            fn() => $this->cargarPublicaciones($request, $user_token, $scope, $grupoFiltro)
-        );
-
-        return response()->json([
-            'res'           => true,
-            'grupo'         => $user_token->grupo->group_name,
-            'scope'         => $scope,
-            'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
-            'publicaciones' => $publicaciones,
-            'cached'        => true, // útil para debug
-        ], 200);
-    }
-
-    /**
-     * Lógica pesada (consultas + formateo) que se cachea.
-     */
-    private function cargarPublicaciones(Request $request, $user_token, string $scope, $grupoFiltro): array
-    {
-        // 👇 EAGER LOADING optimizado
-        $query = Post::with([
-            'user',
-            'comments' => function ($q) {
-                $q->where('activo', 1)->with('user');
-            },
-            'reactions',
-        ])->where('activo', 1);
-
-        if ($scope === 'group') {
-            $gruposVisibles = $this->gruposVisiblesDe($user_token);
-
-            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-                $query->where('group_id', (int) $grupoFiltro);
-            } else {
-                $query->whereIn('group_id', $gruposVisibles);
-            }
-
-            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+            $query->where('group_id', (int) $grupoFiltro);
         } else {
-            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-                ->pluck('id')->all();
-
-            $query->whereIn('group_id', $idsPrincipales)
-                  ->whereHas('user', fn($q) => $q->where('status_id', 1));
+            $query->whereIn('group_id', $gruposVisibles);
         }
 
-        $posts = $query->orderBy('created_at', 'desc')->limit(30)->get();
-
-        return $posts->map(function ($post) use ($user_token, $scope) {
-            return $this->formatearPostOptimizado($post, $user_token, $scope);
-        })->toArray();
+        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+    } else {
+        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+            ->pluck('id')->all();
+        $query->whereIn('group_id', $idsPrincipales)
+              ->whereHas('user', fn($q) => $q->where('status_id', 1));
     }
 
-    /**
-     * Construye la clave de caché.
-     */
-    private function buildCacheKey($user, string $scope, $grupoFiltro): string
-    {
-        $grupoId = $user->grupo_id ?? 'anon';
-        $filtro  = $grupoFiltro ?? 'all';
-        return "comunidad:posts:{$scope}:{$filtro}:grupo_{$grupoId}";
-    }
+    // 👇 LIMIT para no traer 500 posts de golpe
+    $posts = $query->orderBy('created_at', 'desc')->limit(30)->get();
 
-    /**
-     * Invalida el caché del usuario y sus grupos relacionados.
-     */
-    private function invalidarCache($user, ?int $grupoId = null)
-    {
-        $grupoPrincipal = $user->grupo_id ?? null;
+    // 👇 Formatear SIN consultas extra
+    $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
+        return $this->formatearPostOptimizado($post, $user_token, $scope);
+    });
 
-        if (!$grupoPrincipal) return;
+    return response()->json([
+        'res'           => true,
+        'grupo'         => $user_token->grupo->group_name,
+        'scope'         => $scope,
+        'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
+        'publicaciones' => $publicaciones,
+    ], 200);
+}
 
-        // Limpiar todos los scopes y grupos posibles del usuario
-        $keys = [
-            "comunidad:posts:group:all:grupo_{$grupoPrincipal}",
-            "comunidad:posts:global:all:grupo_{$grupoPrincipal}",
-        ];
-
-        if ($grupoId) {
-            $keys[] = "comunidad:posts:group:{$grupoId}:grupo_{$grupoPrincipal}";
-        }
-
-        // También limpiar los grupos visibles (principal + emergencia + monitoreo)
-        $visibles = $this->gruposVisiblesDe($user);
-        foreach ($visibles as $gid) {
-            $keys[] = "comunidad:posts:group:{$gid}:grupo_{$grupoPrincipal}";
-        }
-
-        foreach (array_unique($keys) as $key) {
-            Cache::forget($key);
-        }
-    }
-
-    // ================================================================
-    // STORE
-    // ================================================================
     public function store(savePublishRequest $request)
     {
         $user_token = $request->user();
@@ -164,6 +96,7 @@ class publicacionController extends Controller
             return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
+        // 👇 PRIMERO validar permisos
         $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
 
         if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
@@ -173,50 +106,71 @@ class publicacionController extends Controller
             ], 403);
         }
 
+        // 👇 DESPUÉS guardar archivos
         $post = new Post();
 
         if ($request->hasFile('img')) {
             $post->image = $this->guardarArchivo(
-                $request->file('img'), 'img/publish',
+                $request->file('img'),
+                'img/publish',
                 time() . '_' . $user_token->id
             );
         }
 
         if ($request->hasFile('video')) {
             $post->video = $this->guardarArchivo(
-                $request->file('video'), 'img/publish',
+                $request->file('video'),
+                'img/publish',
                 time() . '_' . $user_token->id . '_video'
             );
         }
 
         if ($request->hasFile('audio')) {
             $post->audio = $this->guardarArchivo(
-                $request->file('audio'), 'audio/publish',
+                $request->file('audio'),
+                'audio/publish',
                 time() . '_' . $user_token->id . '_audio'
             );
         }
 
+        // El cliente puede enviar group_id opcional. Si no viene, va al principal.
+        $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
+
+        if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No tienes permiso para publicar en ese grupo',
+            ], 403);
+        }
+
+        // 3. Guardar post
         $post->post     = $request->txt;
         $post->user_id  = $user_token->id;
+        //$post->group_id = $user_token->grupo_id;
         $post->group_id = $groupDestino;
         $post->activo   = 1;
 
         try {
             $post->save();
-
+            // Notificar a los demás miembros del grupo (excepto al autor)
             User::where('grupo_id', $post->group_id)
                 ->where('id', '!=', $post->user_id)
-                ->whereNotNull('expo_push_token')
-                ->where('expo_push_token', '!=', '')
+                ->whereNotNull('expo_push_token')      // 👈 filtro clave
+                ->where('expo_push_token', '!=', '')   // 👈 por si hay strings vacíos
                 ->get()
                 ->each(function ($user) use ($post) {
                     $user->notify(new NewPostPublished($post));
                 });
 
-            broadcast(new PostCreated($post))->toOthers();
+            \Log::info('[publicacion.store] Post guardado', [
+                'id'    => $post->id,
+                'image' => $post->image,
+                'video' => $post->video,
+                'audio' => $post->audio,
 
-            // 👇 Invalidar caché del grupo donde se publicó
-            $this->invalidarCache($user_token, $groupDestino);
+            ]);
+
+            broadcast(new PostCreated($post))->toOthers();
 
             return response()->json([
                 'res'  => true,
@@ -225,15 +179,15 @@ class publicacionController extends Controller
             ], 200);
         } catch (\Throwable $th) {
             \Log::error('[publicacion.store] Error', ['error' => $th->getMessage()]);
+
             return response()->json([
-                'res' => false, 'msg' => $th->getMessage(),
+                'res' => false,
+                'msg' => $th->getMessage(),
             ], 409);
         }
     }
 
-    // ================================================================
-    // UPDATE
-    // ================================================================
+
     public function update(savePublishRequest $request, $id)
     {
         $user_token = $request->user();
@@ -250,7 +204,8 @@ class publicacionController extends Controller
 
         if ($post->user_id != $user_token->id) {
             return response()->json([
-                'res' => false, 'msg' => 'No tienes permiso para editar esta publicación',
+                'res' => false,
+                'msg' => 'No tienes permiso para editar esta publicación',
             ], 403);
         }
 
@@ -259,43 +214,43 @@ class publicacionController extends Controller
 
             if ($request->hasFile('img')) {
                 $post->image = $this->guardarArchivo(
-                    $request->file('img'), 'img/publish',
+                    $request->file('img'),
+                    'img/publish',
                     time() . '_' . $user_token->id
                 );
             }
 
             if ($request->hasFile('video')) {
                 $post->video = $this->guardarArchivo(
-                    $request->file('video'), 'img/publish',
+                    $request->file('video'),
+                    'img/publish',
                     time() . '_' . $user_token->id . '_video'
                 );
             }
 
             if ($request->hasFile('audio')) {
                 $post->audio = $this->guardarArchivo(
-                    $request->file('audio'), 'audio/publish',
+                    $request->file('audio'),
+                    'audio/publish',
                     time() . '_' . $user_token->id . '_audio'
                 );
             }
 
             $post->save();
 
-            // 👇 Invalidar caché
-            $this->invalidarCache($user_token, (int) $post->group_id);
-
             return response()->json([
-                'res' => true, 'msg' => 'Publicación actualizada correctamente',
+                'res' => true,
+                'msg' => 'Publicación actualizada correctamente',
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([
-                'res' => false, 'msg' => $th->getMessage(),
+                'res' => false,
+                'msg' => $th->getMessage(),
             ], 409);
         }
     }
 
-    // ================================================================
-    // DESTROY
-    // ================================================================
+
     public function destroy(Request $request, $id)
     {
         $user_token = $request->user();
@@ -312,7 +267,8 @@ class publicacionController extends Controller
 
         if ($post->user_id != $user_token->id) {
             return response()->json([
-                'res' => false, 'msg' => 'No tienes permiso para eliminar esta publicación',
+                'res' => false,
+                'msg' => 'No tienes permiso para eliminar esta publicación',
             ], 403);
         }
 
@@ -323,24 +279,26 @@ class publicacionController extends Controller
 
             $post->delete();
 
-            broadcast(new PostDeleted($postId, $groupId, $userId))->toOthers();
+            broadcast(new \App\Events\PostDeleted($postId, $groupId, $userId))->toOthers();
 
-            // 👇 Invalidar caché
-            $this->invalidarCache($user_token, (int) $groupId);
+            \Log::info('[publicacion.destroy] Post eliminado', [
+                'id'       => $postId,
+                'group_id' => $groupId,
+            ]);
 
             return response()->json([
-                'res' => true, 'msg' => 'Publicación eliminada correctamente',
+                'res' => true,
+                'msg' => 'Publicación eliminada correctamente',
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([
-                'res' => false, 'msg' => $th->getMessage(),
+                'res' => false,
+                'msg' => $th->getMessage(),
             ], 500);
         }
     }
 
-    // ================================================================
-    // REACCIONAR
-    // ================================================================
+
     public function reaccionar(Request $request, $id)
     {
         $user = $request->user();
@@ -358,8 +316,7 @@ class publicacionController extends Controller
         if (!$post || !$this->usuarioPuedePublicarEn($user, (int) $post->group_id)) {
             return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
         }
-
-        $existente = PostReaction::where('post_id', $id)
+        $existente    = PostReaction::where('post_id', $id)
             ->where('user_id', $user->id)
             ->first();
 
@@ -385,9 +342,6 @@ class publicacionController extends Controller
         broadcast(new PostReacted($post, $user->id, $tipoFinal, $accion, $tipoAnterior))
             ->toOthers();
 
-        // 👇 Invalidar caché del grupo
-        $this->invalidarCache($user, (int) $post->group_id);
-
         return response()->json([
             'res'    => true,
             'accion' => $accion,
@@ -396,26 +350,30 @@ class publicacionController extends Controller
     }
 
     // ================================================================
-    // HELPERS
+    // HELPERS PRIVADOS
     // ================================================================
 
-    private function formatearPostOptimizado(Post $post, $user_token, string $scope = 'group'): array
-    {
-        $comentarios = $post->comments
-            ->filter(fn($c) => $c->user && (int) $c->user->status_id === 1)
-            ->map(fn($c) => $this->formatearComentario($c, $scope))
-            ->values()
-            ->toArray();
+    private function formatearPost(Post $post, $user_token, string $scope = 'group'): array
+{
+    // ✅ Ya viene precargado desde el eager loading
+    $comentarios = $post->comments
+        ->filter(fn($c) => $c->user && (int) $c->user->status_id === 1)
+        ->map(fn($c) => $this->formatearComentario($c, $scope))
+        ->values()
+        ->toArray();
 
-        $counts = self::REACCIONES_VACIAS;
-        $miReaccion = null;
-        foreach ($post->reactions as $r) {
-            if (isset($counts[$r->type])) $counts[$r->type]++;
-            if ($r->user_id === $user_token->id) $miReaccion = $r->type;
-        }
+    // ✅ Reacciones ya cargadas, contar en memoria
+    $counts = self::REACCIONES_VACIAS;
+    $miReaccion = null;
+    foreach ($post->reactions as $r) {
+        if (isset($counts[$r->type])) $counts[$r->type]++;
+        if ($r->user_id === $user_token->id) $miReaccion = $r->type;
+    }
+    $reacciones = ['counts' => $counts, 'mi_reaccion' => $miReaccion];
 
-        $autor = $post->user;
-        $nombreAutor = $this->nombrePublico($autor, $scope);
+    // ✅ Autor ya cargado
+    $autor = $post->user;
+    $nombreAutor = $this->nombrePublico($autor, $scope);
 
         if ($scope === 'group') {
             $user_data = [
@@ -424,6 +382,7 @@ class publicacionController extends Controller
                 'avatar_url' => $autor->avatar_url ?? null,
             ];
         } else {
+            // En global: sin id, sin avatar (para no exponer identidad)
             $user_data = [
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $autor->avatar_url ?? null,
@@ -438,16 +397,22 @@ class publicacionController extends Controller
             'video'   => $post->video,
             'audio'   => $post->audio,
             'user'    => $nombreAutor,
+
             'user_data' => $user_data,
+
             'fecha'       => $post->created_at->format('d/m/Y'),
             'hora'        => $post->created_at->format('H:i'),
             'comentarios' => $comentarios,
-            'reacciones'  => $counts,
-            'mi_reaccion' => $miReaccion,
+            'reacciones'  => $reacciones['counts'],
+            'mi_reaccion' => $reacciones['mi_reaccion'],
+
             'links' => $this->extraerLinksDetectados($post->post),
         ];
     }
 
+    /**
+     * Formatea un post recién creado.
+     */
     private function formatearPostNuevo(Post $post, $user_token): array
     {
         $nombreAutor = $this->nombreCompleto($user_token);
@@ -460,23 +425,30 @@ class publicacionController extends Controller
             'video'   => $post->video,
             'audio'   => $post->audio,
             'user'    => $nombreAutor,
+
             'user_data' => [
                 'id'         => $user_token->id,
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $user_token->avatar_url ?? null,
             ],
+
             'fecha'       => $post->created_at->format('d/m/Y'),
             'hora'        => $post->created_at->format('H:i'),
             'comentarios' => [],
             'reacciones'  => self::REACCIONES_VACIAS,
             'mi_reaccion' => null,
-            'links' => $this->extraerLinksDetectados($post->post),
+
+            'links' => $this->extraerLinksDetectados($post->post),   // ✅ funciona
         ];
     }
 
+    /**
+     * Formatea un comentario.
+     */
     private function formatearComentario($comment, string $scope = 'group'): array
     {
         $autor = $comment->user;
+
         $nombreAutor = $this->nombrePublico($autor, $scope);
 
         return [
@@ -488,12 +460,35 @@ class publicacionController extends Controller
         ];
     }
 
+    /**
+     * Cuenta las reacciones de un post.
+     */
+    private function contarReacciones(Post $post, int $userId): array
+    {
+        $counts     = self::REACCIONES_VACIAS;
+        $miReaccion = null;
+
+        foreach ($post->reactions()->get() as $r) {
+            if (isset($counts[$r->type])) {
+                $counts[$r->type]++;
+            }
+            if ($r->user_id === $userId) {
+                $miReaccion = $r->type;
+            }
+        }
+
+        return ['counts' => $counts, 'mi_reaccion' => $miReaccion];
+    }
+
+    /**
+     * Guarda un archivo en `public/{$carpeta}`.
+     */
     private function guardarArchivo($file, string $carpeta, string $baseName): string
     {
         $ext  = $file->getClientOriginalExtension() ?: 'bin';
         $name = $baseName . '.' . $ext;
-        $size = $file->getSize();
-        $mime = $file->getMimeType();
+        $size = $file->getSize();          // ✅ antes de mover
+        $mime = $file->getMimeType();      // ✅ antes de mover
 
         $path = public_path($carpeta);
         if (!file_exists($path)) {
@@ -512,23 +507,36 @@ class publicacionController extends Controller
         return $name;
     }
 
+    /**
+     * Devuelve el nombre completo de un usuario.
+     */
     private function nombreCompleto($user): string
     {
         return trim(
             ($user->nombre ?? '') . ' ' .
-            ($user->apellido_p ?? '') . ' ' .
-            ($user->apellido_m ?? '')
+                ($user->apellido_p ?? '') . ' ' .
+                ($user->apellido_m ?? '')
         );
     }
 
+    /**
+     * Extrae las URLs del texto de una publicación.
+     *
+     * @return string[]
+     */
     private function extraerUrls(string $texto): array
     {
         if (empty($texto)) return [];
+
         $pattern = '/https?:\/\/[^\s<>"\')\]]+/i';
         preg_match_all($pattern, $texto, $matches);
+
         return array_values(array_unique($matches[0] ?? []));
     }
 
+    /**
+     * Detecta el tipo de link según el dominio.
+     */
     private function detectarTipoLink(string $url): ?array
     {
         $dominios = [
@@ -552,6 +560,11 @@ class publicacionController extends Controller
         return null;
     }
 
+    /**
+     * Combina extraerUrls + detectarTipoLink.
+     *
+     * @return array<int, array{tipo: string, url: string}>
+     */
     private function extraerLinksDetectados(?string $texto): array
     {
         return array_values(array_filter(
@@ -562,30 +575,46 @@ class publicacionController extends Controller
         ));
     }
 
+    /**
+     * Devuelve el nombre del usuario según el scope.
+     *
+     * - scope = "group"  → nombre completo (nombre + apellidos)
+     * - scope = "global" → solo el primer nombre (privacidad)
+     */
     private function nombrePublico($user, string $scope = 'group'): string
     {
         if ($scope === 'global') {
             return trim($user->nombre ?? 'Usuario');
         }
+
         return $this->nombreCompleto($user);
     }
 
+    /**
+     * Devuelve los IDs de grupos a los que el usuario puede acceder:
+     * su grupo principal y el grupo de emergencias (si existe).
+     */
     private function gruposVisiblesDe($user): array
     {
-        if ($this->gruposVisiblesCache !== null) {
-            return $this->gruposVisiblesCache;
-        }
-
         if (!$user->grupo_id) {
-            return $this->gruposVisiblesCache = [];
+            return [];
         }
 
-        return $this->gruposVisiblesCache = \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+        return \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
     }
 
+    /**
+     * Valida que el usuario pueda publicar en el grupo indicado:
+     * - Debe ser su grupo principal, o
+     * - El grupo de emergencias cuyo padre es su principal.
+     */
     private function usuarioPuedePublicarEn($user, int $grupoId): bool
     {
         if (!$user->grupo_id) return false;
-        return in_array($grupoId, $this->gruposVisiblesDe($user), true);
+
+        $visibles = \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+
+        return in_array($grupoId, $visibles, true);
     }
+
 }
