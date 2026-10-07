@@ -31,62 +31,62 @@ class publicacionController extends Controller
 
 
     public function index(Request $request)
-    {
-        $user_token = $request->user();
+{
+    $user_token = $request->user();
 
-        if (!$user_token) {
-            return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
-        }
-
-        $scope = $request->input('scope', 'group');
-
-        if (!in_array($scope, ['group', 'global'])) {
-            $scope = 'group';
-        }
-
-
-        $query = Post::where('activo', 1);
-
-        if ($scope === 'group') {
-            // Grupos visibles: principal + emergencia + monitoreo
-            $gruposVisibles = $this->gruposVisiblesDe($user_token);
-
-            // Si el front envía un group_id específico, filtramos SOLO por ese
-            $grupoFiltro = $request->input('group_id');
-
-            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-                $query->where('group_id', (int) $grupoFiltro);
-            } else {
-                // Fallback: todos los grupos visibles (comportamiento anterior)
-                $query->whereIn('group_id', $gruposVisibles);
-            }
-
-            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
-        } else {
-
-            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-                ->pluck('id')
-                ->all();
-
-            $query->whereIn('group_id', $idsPrincipales)
-                ->whereHas('user', fn($q) => $q->where('status_id', 1));
-        }
-
-        $posts = $query->orderBy('created_at', 'desc')->get();
-
-
-        $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
-            return $this->formatearPost($post, $user_token, $scope);
-        });
-
-        return response()->json([
-            'res'           => true,
-            'grupo'         => $user_token->grupo->group_name,
-            'scope'         => $scope,
-            'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
-            'publicaciones' => $publicaciones,
-        ], 200);
+    if (!$user_token) {
+        return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
     }
+
+    $scope = $request->input('scope', 'group');
+    if (!in_array($scope, ['group', 'global'])) {
+        $scope = 'group';
+    }
+
+    // 👇 EAGER LOADING optimizado
+    $query = Post::with([
+        'user',        // autor del post
+        'comments' => function ($q) {
+            // Cargar comentarios activos + su usuario en una sola query anidada
+            $q->where('activo', 1)->with('user');
+        },
+        'reactions',   // reacciones del post
+    ])->where('activo', 1);
+
+    if ($scope === 'group') {
+        $gruposVisibles = $this->gruposVisiblesDe($user_token);
+        $grupoFiltro = $request->input('group_id');
+
+        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+            $query->where('group_id', (int) $grupoFiltro);
+        } else {
+            $query->whereIn('group_id', $gruposVisibles);
+        }
+
+        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+    } else {
+        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+            ->pluck('id')->all();
+        $query->whereIn('group_id', $idsPrincipales)
+              ->whereHas('user', fn($q) => $q->where('status_id', 1));
+    }
+
+    //LIMIT para no traer 500 posts de golpe
+    $posts = $query->orderBy('created_at', 'desc')->limit(30)->get();
+
+    //Formatear SIN consultas extra
+    $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
+        return $this->formatearPostOptimizado($post, $user_token, $scope);
+    });
+
+    return response()->json([
+        'res'           => true,
+        'grupo'         => $user_token->grupo->group_name,
+        'scope'         => $scope,
+        'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
+        'publicaciones' => $publicaciones,
+    ], 200);
+}
 
     public function store(savePublishRequest $request)
     {
@@ -96,7 +96,7 @@ class publicacionController extends Controller
             return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
-        // 👇 PRIMERO validar permisos
+        //PRIMERO validar permisos
         $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
 
         if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
@@ -106,7 +106,7 @@ class publicacionController extends Controller
             ], 403);
         }
 
-        // 👇 DESPUÉS guardar archivos
+        // DESPUÉS guardar archivos
         $post = new Post();
 
         if ($request->hasFile('img')) {
@@ -155,8 +155,8 @@ class publicacionController extends Controller
             // Notificar a los demás miembros del grupo (excepto al autor)
             User::where('grupo_id', $post->group_id)
                 ->where('id', '!=', $post->user_id)
-                ->whereNotNull('expo_push_token')      // 👈 filtro clave
-                ->where('expo_push_token', '!=', '')   // 👈 por si hay strings vacíos
+                ->whereNotNull('expo_push_token')
+                ->where('expo_push_token', '!=', '')
                 ->get()
                 ->each(function ($user) use ($post) {
                     $user->notify(new NewPostPublished($post));
@@ -609,4 +609,57 @@ class publicacionController extends Controller
 
         return in_array($grupoId, $visibles, true);
     }
+
+    private function formatearPostOptimizado(Post $post, $user_token, string $scope = 'group'): array
+{
+    // ✅ Filtrar comentarios activos cuyo usuario esté activo (en memoria, sin SQL)
+    $comentarios = $post->comments
+        ->filter(fn($c) => $c->user && (int) $c->user->status_id === 1)
+        ->map(fn($c) => $this->formatearComentario($c, $scope))
+        ->values()          // reindexar el array tras filter()
+        ->toArray();
+
+    // ✅ Reacciones ya cargadas, contar en memoria
+    $counts = self::REACCIONES_VACIAS;
+    $miReaccion = null;
+    foreach ($post->reactions as $r) {
+        if (isset($counts[$r->type])) $counts[$r->type]++;
+        if ($r->user_id === $user_token->id) $miReaccion = $r->type;
+    }
+    $reacciones = ['counts' => $counts, 'mi_reaccion' => $miReaccion];
+
+    // ✅ Autor ya cargado
+    $autor = $post->user;
+    $nombreAutor = $this->nombrePublico($autor, $scope);
+
+    if ($scope === 'group') {
+        $user_data = [
+            'id'         => $autor->id,
+            'nombre'     => $nombreAutor,
+            'avatar_url' => $autor->avatar_url ?? null,
+        ];
+    } else {
+        $user_data = [
+            'nombre'     => $nombreAutor,
+            'avatar_url' => $autor->avatar_url ?? null,
+        ];
+    }
+
+    return [
+        'id'      => $post->id,
+        'user_id' => $scope === 'group' ? $post->user_id : null,
+        'post'    => $post->post,
+        'image'   => $post->image,
+        'video'   => $post->video,
+        'audio'   => $post->audio,
+        'user'    => $nombreAutor,
+        'user_data' => $user_data,
+        'fecha'       => $post->created_at->format('d/m/Y'),
+        'hora'        => $post->created_at->format('H:i'),
+        'comentarios' => $comentarios,
+        'reacciones'  => $reacciones['counts'],
+        'mi_reaccion' => $reacciones['mi_reaccion'],
+        'links' => $this->extraerLinksDetectados($post->post),
+    ];
+}
 }
