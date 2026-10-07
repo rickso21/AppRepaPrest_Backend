@@ -5,15 +5,17 @@ namespace App\Events;
 use App\Models\Post;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class PostReacted implements ShouldBroadcastNow
+class PostReacted implements ShouldBroadcast, ShouldQueue
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $postId;
+    public $groupId;        // ← nuevo
     public $userId;
     public $type;
     public $accion;
@@ -27,28 +29,16 @@ class PostReacted implements ShouldBroadcastNow
         ?string $tipoAnterior = null
     ) {
         $this->postId       = $post->id;
+        $this->groupId      = $post->group_id;   // ← guardar aquí
         $this->userId       = $userId;
         $this->type         = $type;
         $this->accion       = $accion;
         $this->tipoAnterior = $tipoAnterior;
-
-        \Log::info('[PostReacted] Evento instanciado', [
-            'post_id'       => $post->id,
-            'group_id'      => $post->group_id,
-            'user_id'       => $userId,
-            'type'          => $type,
-            'accion'        => $accion,
-            'tipoAnterior'  => $tipoAnterior,
-            'timestamp'     => now()->toISOString(),
-        ]);
     }
 
     public function broadcastOn(): array
     {
-        $groupId = Post::find($this->postId)?->group_id;
-        $canalId = \App\Models\Grupo::canalPrincipalDe((int) $groupId);
-
-        return [new PrivateChannel('group.' . $canalId)];
+        return [new PrivateChannel('group.' . $this->groupId)];
     }
 
     public function broadcastAs(): string
