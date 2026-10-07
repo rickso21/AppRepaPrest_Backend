@@ -11,7 +11,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Support\Facades\Log;
-use NotificationChannels\Expo\ExpoPushToken;
 
 #[Fillable([
     'nombre',
@@ -30,8 +29,7 @@ use NotificationChannels\Expo\ExpoPushToken;
     'grupo_id',
     'en_llamada',
     'llamada_de',
-    'current_channel',
-    'expo_push_token',
+    'current_channel'
 ])]
 #[Hidden(['password', 'remember_token', 'token_pc'])]
 #[Table('tbl_user')]
@@ -323,10 +321,5 @@ class User extends Authenticatable
     public function getLogoUrlAttribute()
 {
     return $this->logo ? asset('storage/' . $this->logo) : null;
-}
-
-  public function routeNotificationForExpo(): ExpoPushToken
-{
-    return ExpoPushToken::make($this->expo_push_token);
 }
 }

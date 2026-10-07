@@ -301,9 +301,7 @@ class AdController extends Controller
         ], 200);
     }
 
-    // ================================================================
     // PROCESAMIENTO DE PAGO DE ANUNCIO
-    // ================================================================
 
     public function procesarPagoDeAnuncio(array $pago_mp): array
     {

@@ -1,8 +1,345 @@
 <?php
 
-// ============================================
+// FUNCIONES LOGIN (user)
+
+//ROLES
+
+if (!function_exists('user_rol_user'))        { function user_rol_user()        { return 1; } }
+if (!function_exists('user_rol_admin'))       { function user_rol_admin()       { return 2; } }
+if (!function_exists('user_rol_super_admin')) { function user_rol_super_admin() { return 3; } }
+if (!function_exists('user_rol_comercio'))    { function user_rol_comercio()    { return 4; } }
+
+if (!function_exists('user_status_activo'))   { function user_status_activo()   { return 1; } }
+if (!function_exists('user_status_inactivo')) { function user_status_inactivo() { return 2; } }
+
+if (!function_exists('user_token_expiration_minutes')) {
+    function user_token_expiration_minutes() { return 60 * 24 * 7; }
+}
+
+// RESPUESTAS
+
+if (!function_exists('user_error_response')) {
+    function user_error_response(string $msg, int $status = 400, array $extra = []): \Illuminate\Http\JsonResponse
+    {
+        return response()->json(array_merge([
+            'res' => false,
+            'msg' => $msg,
+        ], $extra), $status);
+    }
+}
+
+if (!function_exists('user_success_response')) {
+    function user_success_response(string $msg, array $extra = [], int $status = 200): \Illuminate\Http\JsonResponse
+    {
+        return response()->json(array_merge([
+            'res' => true,
+            'msg' => $msg,
+        ], $extra), $status);
+    }
+}
+
+// FORMATEO DE USUARIO
+
+if (!function_exists('user_nombre_completo')) {
+    function user_nombre_completo(\App\Models\User $user): string
+    {
+        return trim(
+            ($user->nombre ?? '') . ' ' .
+            ($user->apellido_p ?? '') . ' ' .
+            ($user->apellido_m ?? '')
+        );
+    }
+}
+
+if (!function_exists('user_formatear_basico')) {
+    function user_formatear_basico(\App\Models\User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => user_nombre_completo($user),
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+        ];
+    }
+}
+
+if (!function_exists('user_formatear_completo')) {
+    function user_formatear_completo(\App\Models\User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => user_nombre_completo($user),
+            'apellido_p'      => $user->apellido_p,
+            'apellido_m'      => $user->apellido_m,
+            'email'           => $user->email,
+            'telefono'        => $user->telefono,
+            'ciudad'          => $user->ciudad,
+            'rol_id'          => $user->rol_id,
+            'status_id'       => $user->status_id,
+            'grupo_id'        => $user->grupo_id,
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+            'created_at'      => $user->created_at,
+        ];
+    }
+}
+
+if (!function_exists('user_formatear_login')) {
+    function user_formatear_login(\App\Models\User $user): array
+    {
+        return [
+            'id'              => $user->id,
+            'nombre'          => $user->nombre,
+            'nombre_completo' => user_nombre_completo($user),
+            'nombre_raw'      => $user->nombre,
+            'apellido_p'      => $user->apellido_p,
+            'apellido_m'      => $user->apellido_m,
+            'email'           => $user->email,
+            'telefono'        => $user->telefono,
+            'ciudad'          => $user->ciudad,
+            'grupo_id'        => $user->grupo_id,
+            'rol_id'          => $user->rol_id,
+            'avatar_url'      => $user->avatar_url,
+            'portada_url'     => $user->portada_url,
+            'nombre_comercio' => $user->nombre_comercio ?? null,
+        ];
+    }
+}
+
+//CREACIÓN DE USUARIO
+
+if (!function_exists('user_crear_desde_request')) {
+    /**
+     * Crea un usuario base desde un request.
+     * Procesa avatar/portada y asigna rol/status.
+     */
+    function user_crear_desde_request($request, int $rolId): \App\Models\User
+    {
+        $user = new \App\Models\User();
+        $user->nombre     = trim($request->name);
+        $user->apellido_p = $request->apellido_p ? trim($request->apellido_p) : null;
+        $user->apellido_m = $request->apellido_m ? trim($request->apellido_m) : null;
+        $user->email      = $request->email;
+        $user->password   = \Illuminate\Support\Facades\Hash::make($request->password);
+        $user->telefono   = $request->telefono;
+        $user->ciudad     = $request->ciudad;
+        $user->rol_id     = $rolId;
+        $user->status_id  = user_status_activo();
+
+        // Archivos
+        if ($request->hasFile('avatar')) {
+            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+            \Illuminate\Support\Facades\Log::info('[crearUsuario] Avatar guardado', ['path' => $user->avatar]);
+        }
+
+        if ($request->hasFile('portada')) {
+            $user->portada = $request->file('portada')->store('users/portadas', 'public');
+            \Illuminate\Support\Facades\Log::info('[crearUsuario] Portada guardada', ['path' => $user->portada]);
+        }
+
+        $user->save();
+
+        return $user;
+    }
+}
+
+//ACTUALIZACIÓN DE USUARIO
+
+if (!function_exists('user_actualizar_datos_basicos')) {
+    /**
+     * Actualiza los datos básicos del usuario desde el request.
+     */
+    function user_actualizar_datos_basicos(\App\Models\User $user, $request): void
+    {
+        if ($request->filled('nombre')) {
+            $nombreLimpio = trim(explode(' ', trim($request->nombre))[0] ?? '');
+            if ($nombreLimpio !== '') {
+                $user->nombre = $nombreLimpio;
+            }
+        }
+
+        if ($request->filled('apellido_p')) $user->apellido_p = trim($request->apellido_p);
+        if ($request->filled('apellido_m')) $user->apellido_m = trim($request->apellido_m);
+        if ($request->filled('telefono'))   $user->telefono   = $request->telefono;
+        if ($request->filled('ciudad'))     $user->ciudad     = $request->ciudad;
+    }
+}
+
+if (!function_exists('user_actualizar_archivos')) {
+    /**
+     * Reemplaza avatar y portada del usuario, eliminando los anteriores.
+     */
+    function user_actualizar_archivos(\App\Models\User $user, $request): void
+    {
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+
+        if ($request->hasFile('avatar')) {
+            if ($user->avatar && $disk->exists($user->avatar)) {
+                $disk->delete($user->avatar);
+            }
+            $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+        }
+
+        if ($request->hasFile('portada')) {
+            if ($user->portada && $disk->exists($user->portada)) {
+                $disk->delete($user->portada);
+            }
+            $user->portada = $request->file('portada')->store('users/portadas', 'public');
+        }
+    }
+}
+
+//PRÉSTAMOS BLOQUEANTES
+
+if (!function_exists('user_buscar_prestamo_bloqueante')) {
+    /**
+     * Busca un préstamo activo que bloquee la inhabilitación de cuenta.
+     */
+    function user_buscar_prestamo_bloqueante(int $userId)
+    {
+        return \App\Models\Prestamo::where('usuario_id', $userId)
+            ->whereIn('estado_prestamo_id', [1, 2, 3])
+            ->orderBy('id', 'desc')
+            ->first();
+    }
+}
+
+if (!function_exists('user_mensaje_prestamo_bloqueante')) {
+    /**
+     * Mensaje según el estado del préstamo bloqueante.
+     */
+    function user_mensaje_prestamo_bloqueante(int $estadoId): string
+    {
+        return match ($estadoId) {
+            1 => 'No puedes eliminar tu cuenta porque tienes un préstamo pendiente de aprobación.',
+            2 => 'No puedes eliminar tu cuenta porque tienes un préstamo aprobado (PAGOS EN PROCESO).',
+            3 => 'No puedes eliminar tu cuenta porque tienes un préstamo activo en curso.',
+            default => 'No puedes inhabilitar tu cuenta porque tienes un préstamo en proceso.',
+        };
+    }
+}
+
+
+if (!function_exists('user_validate_auth')) {
+    function user_validate_auth(?\App\Models\User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user) {
+            return user_error_response('Usuario no autenticado', 401);
+        }
+        return null;
+    }
+}
+
+if (!function_exists('user_validate_admin')) {
+    function user_validate_admin(?\App\Models\User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user || !in_array($user->rol_id, [user_rol_admin(), user_rol_super_admin()])) {
+            return user_error_response('No tienes permisos para esta acción.', 403);
+        }
+        return null;
+    }
+}
+
+// ---------- GRUPOS ----------
+
+if (!function_exists('user_generar_codigo_grupo_unico')) {
+    /**
+     * Genera un código único de grupo (8 caracteres alfanuméricos en mayúsculas).
+     */
+    function user_generar_codigo_grupo_unico(): string
+    {
+        do {
+            $codigo = \Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(8));
+        } while (\App\Models\Grupo::where('code', $codigo)->exists());
+
+        return $codigo;
+    }
+}
+
+if (!function_exists('user_grupo_payload')) {
+    /**
+     * Payload simple de un grupo.
+     */
+    function user_grupo_payload(?\App\Models\Grupo $grupo): ?array
+    {
+        if (!$grupo) return null;
+        return [
+            'id'   => $grupo->id,
+            'name' => $grupo->group_name,
+        ];
+    }
+}
+
+if (!function_exists('user_admin_de_grupo')) {
+    /**
+     * Busca al admin de un grupo: primero SUPER_ADMIN, luego user_leader_id.
+     */
+    function user_admin_de_grupo(\App\Models\Grupo $grupo): ?\App\Models\User
+    {
+        $admin = \App\Models\User::where('grupo_id', $grupo->id)
+            ->where('rol_id', user_rol_super_admin())
+            ->first();
+
+        if (!$admin && $grupo->user_leader_id) {
+            $admin = \App\Models\User::find($grupo->user_leader_id);
+        }
+
+        return $admin;
+    }
+}
+
+if (!function_exists('user_subgrupo_payload')) {
+    /**
+     * Payload simple de un subgrupo (emergencia/monitoreo).
+     */
+    function user_subgrupo_payload(?\App\Models\Grupo $grupo): ?array
+    {
+        if (!$grupo) return null;
+        return [
+            'id'         => $grupo->id,
+            'group_name' => $grupo->group_name,
+            'status'     => $grupo->status,
+        ];
+    }
+}
+
+// ---------- AUTH / LOGIN ----------
+
+if (!function_exists('user_buscar_por_email_o_telefono')) {
+    /**
+     * Busca un usuario por email o teléfono.
+     */
+    function user_buscar_por_email_o_telefono(string $valor): ?\App\Models\User
+    {
+        return \App\Models\User::where(function ($query) use ($valor) {
+            $query->where('email', $valor)
+                ->orWhere('telefono', $valor);
+        })->first();
+    }
+}
+
+if (!function_exists('user_crear_token')) {
+    /**
+     * Crea un token Sanctum y devuelve el payload completo.
+     */
+    function user_crear_token(\App\Models\User $user): array
+    {
+        $token = $user->createToken('Palabra_Secreta');
+        $date  = \Carbon\Carbon::now();
+
+        return [
+            'token'      => $token->plainTextToken,
+            'created_at' => $date->format('Y-m-d H:i:s'),
+            'expired_at' => $date->copy()
+                ->addMinutes(user_token_expiration_minutes())
+                ->format('Y-m-d H:i:s'),
+        ];
+    }
+}
+
 // FUNCIONES DE UTILIDAD GENERAL
-// ============================================
 
 if (!function_exists('numeroAleatorio')) {
     function numeroAleatorio($min, $max)
@@ -41,9 +378,7 @@ if (!function_exists('crypto_rand_secure')) {
     }
 }
 
-// ============================================
 // FUNCIONES PARA CÁLCULO DE INTERÉS
-// ============================================
 
 if (!function_exists('calcula_interes_detallado')) {
     function calcula_interes_detallado($monto, $quincenas)
@@ -214,9 +549,7 @@ if (!function_exists('verificar_pagos_exactos')) {
     }
 }
 
-// ============================================
 // FUNCIONES DE ESTADO Y TRANSICIONES
-// ============================================
 
 if (!function_exists('getEstadoTexto')) {
     function getEstadoTexto($estado_id)
@@ -319,33 +652,6 @@ if (!function_exists('getEstadosParaSelector')) {
     }
 }
 
-// ============================================
-// FUNCIONES DE FECHAS
-// ============================================
-/*
-if (!function_exists('calcularProximaFechaPago')) {
-    function calcularProximaFechaPago($prestamo)
-    {
-        if (!$prestamo->fecha_desembolso) {
-            return null;
-        }
-
-        $fecha_desembolso = $prestamo->fecha_desembolso;
-        if (!$fecha_desembolso instanceof \Carbon\Carbon) {
-            $fecha_desembolso = \Carbon\Carbon::parse($fecha_desembolso);
-        }
-
-        $pagos_realizados = $prestamo->pagos_realizados ?? 0;
-        $proxima_fecha = $fecha_desembolso->copy()->addDays($pagos_realizados * 15);
-
-        while ($proxima_fecha->lt(now())) {
-            $proxima_fecha->addDays(15);
-        }
-
-        return $proxima_fecha;
-    }
-}
-*/
 if (!function_exists('calcularProximaFechaPago')) {
     function calcularProximaFechaPago($prestamo)
     {
@@ -538,9 +844,7 @@ if (!function_exists('generarFolio')) {
     }
 }
 
-// ============================================
 // FUNCIONES DE DÍAS HÁBILES
-// ============================================
 
 if (!function_exists('sumarDiasHabiles')) {
     function sumarDiasHabiles($fecha, $dias, $festivos = [])
@@ -829,9 +1133,7 @@ if (!function_exists('generarMontosSugeridos')) {
             ];
         }
 
-        // ============================================
         // 1. MONTOS BASE (escalones fijos)
-        // ============================================
         $escalones = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 5000, 10000];
 
         foreach ($escalones as $escalon) {
@@ -846,9 +1148,7 @@ if (!function_exists('generarMontosSugeridos')) {
             }
         }
 
-        // ============================================
         // 2. MONTOS PROPORCIONALES (25%, 50%, 75%, 100%)
-        // ============================================
         if ($limite_disponible > 500) {
             $proporciones = [0.25, 0.50, 0.75, 1.0];
             foreach ($proporciones as $prop) {
@@ -879,9 +1179,7 @@ if (!function_exists('generarMontosSugeridos')) {
             }
         }
 
-        // ============================================
         // 3. MONTOS INTERMEDIOS (múltiplos de 50)
-        // ============================================
         if ($limite_disponible >= 100) {
             $base = 100;
             $contador = 0;
@@ -916,9 +1214,7 @@ if (!function_exists('generarMontosSugeridos')) {
             }
         }
 
-        // ============================================
         // 4. SIEMPRE INCLUIR EL MONTO MÁXIMO
-        // ============================================
         $existe_maximo = false;
         foreach ($montos as $m) {
             if ($m['monto'] == $limite_disponible) {
@@ -937,9 +1233,7 @@ if (!function_exists('generarMontosSugeridos')) {
             ];
         }
 
-        // ============================================
         // 5. LIMPIAR DUPLICADOS Y ORDENAR POR MONTO
-        // ============================================
         $montos_unicos = [];
         $montos_vistos = [];
 
@@ -955,9 +1249,7 @@ if (!function_exists('generarMontosSugeridos')) {
             return $a['monto'] - $b['monto'];
         });
 
-        // ============================================
         // 6. SELECCIONAR OPCIONES REPRESENTATIVAS
-        // ============================================
         if (count($montos_unicos) > $max_opciones) {
             // Si tenemos más opciones de las permitidas, seleccionar las más representativas
 
@@ -1030,9 +1322,7 @@ if (!function_exists('getMontosPorRango')) {
 }
 
 
-// ============================================
 // VALIDACIÓN DE SALDO MÍNIMO
-// ============================================
 
 if (!function_exists('validarSaldoMinimo')) {
     /**
@@ -1104,9 +1394,7 @@ if (!function_exists('validarSaldoMinimo')) {
     {
         $ifp = fopen(public_path('/img/group/' . $file_name), 'wb');
         $data = explode(',', $file);
-        // we could add validation here with ensuring count( $data ) > 1
         fwrite($ifp, base64_decode($data[1]));
-        // clean up the file resource
         fclose($ifp);
         return $file_name;
     }
@@ -1123,9 +1411,7 @@ if (!function_exists('validarSaldoMinimo')) {
     }
 }
 
-// ============================================
 // FUNCIONES DE WHATSAPP
-// ============================================
 
 if (!function_exists('normalizarTelefonoWhatsApp')) {
     /**
@@ -1350,3 +1636,531 @@ if (!function_exists('whatsappUrlParaPrestamo')) {
         return generarLinkWhatsApp($telefono, $texto);
     }
 }
+
+// FUNCIONES  PUBLICACIONES (comunidad)
+
+
+if (!function_exists('post_reacciones_validas')) {
+    function post_reacciones_validas(): array
+    {
+        return ['like', 'love', 'haha', 'sad', 'angry'];
+    }
+}
+
+if (!function_exists('post_reacciones_vacias')) {
+    function post_reacciones_vacias(): array
+    {
+        return [
+            'like'  => 0,
+            'love'  => 0,
+            'haha'  => 0,
+            'sad'   => 0,
+            'angry' => 0,
+        ];
+    }
+}
+
+
+if (!function_exists('post_error_response')) {
+    function post_error_response(string $msg, int $status = 400): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'res' => false,
+            'msg' => $msg,
+        ], $status);
+    }
+}
+
+if (!function_exists('post_success_response')) {
+    function post_success_response(string $msg, array $extra = [], int $status = 200): \Illuminate\Http\JsonResponse
+    {
+        return response()->json(array_merge([
+            'res' => true,
+            'msg' => $msg,
+        ], $extra), $status);
+    }
+}
+
+
+if (!function_exists('post_validate_auth')) {
+    function post_validate_auth(?\App\Models\User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user) {
+            return post_error_response('Usuario no autenticado', 401);
+        }
+        return null;
+    }
+}
+
+if (!function_exists('post_find_or_fail')) {
+    function post_find_or_fail(int $id): \App\Models\Post|\Illuminate\Http\JsonResponse
+    {
+        $post = \App\Models\Post::find($id);
+
+        if (!$post) {
+            return post_error_response('Publicación no encontrada', 404);
+        }
+
+        return $post;
+    }
+}
+
+if (!function_exists('post_validate_ownership')) {
+    function post_validate_ownership(\App\Models\User $user, \App\Models\Post $post, string $accion = 'editar'): ?\Illuminate\Http\JsonResponse
+    {
+        if ($post->user_id != $user->id) {
+            return post_error_response("No tienes permiso para {$accion} esta publicación", 403);
+        }
+        return null;
+    }
+}
+
+//GRUPOS / PERMISOS
+
+if (!function_exists('post_grupos_visibles_de')) {
+    /**
+     * Devuelve los IDs de grupos visibles para un usuario.
+     */
+    function post_grupos_visibles_de(\App\Models\User $user): array
+    {
+        if (!$user->grupo_id) {
+            return [];
+        }
+
+        return \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+    }
+}
+
+if (!function_exists('post_usuario_puede_publicar_en')) {
+    /**
+     * Valida que el usuario pueda publicar en el grupo indicado.
+     */
+    function post_usuario_puede_publicar_en(\App\Models\User $user, int $grupoId): bool
+    {
+        if (!$user->grupo_id) return false;
+
+        $visibles = post_grupos_visibles_de($user);
+
+        return in_array($grupoId, $visibles, true);
+    }
+}
+
+
+if (!function_exists('post_nombre_completo')) {
+    function post_nombre_completo($user): string
+    {
+        return trim(
+            ($user->nombre ?? '') . ' ' .
+            ($user->apellido_p ?? '') . ' ' .
+            ($user->apellido_m ?? '')
+        );
+    }
+}
+
+if (!function_exists('post_nombre_publico')) {
+
+    function post_nombre_publico($user, string $scope = 'group'): string
+    {
+        if ($scope === 'global') {
+            return trim($user->nombre ?? 'Usuario');
+        }
+
+        return post_nombre_completo($user);
+    }
+}
+
+// ---------- ARCHIVOS ----------
+
+if (!function_exists('post_guardar_archivo')) {
+    /**
+     * Guarda un archivo en `public/{$carpeta}`.
+     */
+    function post_guardar_archivo($file, string $carpeta, string $baseName): string
+    {
+        $ext  = $file->getClientOriginalExtension() ?: 'bin';
+        $name = $baseName . '.' . $ext;
+        $size = $file->getSize();
+        $mime = $file->getMimeType();
+
+        $path = public_path($carpeta);
+        if (!file_exists($path)) {
+            mkdir($path, 0775, true);
+        }
+
+        $file->move($path, $name);
+
+        \Log::info('[publicacion] Archivo guardado', [
+            'carpeta' => $carpeta,
+            'file'    => $name,
+            'size'    => $size,
+            'mime'    => $mime,
+        ]);
+
+        return $name;
+    }
+}
+
+//LINKS
+
+if (!function_exists('post_extraer_urls')) {
+    /**
+     * Extrae las URLs del texto de una publicación.
+     */
+    function post_extraer_urls(string $texto): array
+    {
+        if (empty($texto)) return [];
+
+        $pattern = '/https?:\/\/[^\s<>"\')\]]+/i';
+        preg_match_all($pattern, $texto, $matches);
+
+        return array_values(array_unique($matches[0] ?? []));
+    }
+}
+
+if (!function_exists('post_detectar_tipo_link')) {
+
+    function post_detectar_tipo_link(string $url): ?array
+    {
+        $dominios = [
+            'youtube'   => '/(youtube\.com|youtu\.be)/i',
+            'facebook'  => '/facebook\.com/i',
+            'instagram' => '/instagram\.com/i',
+            'tiktok'    => '/tiktok\.com/i',
+            'twitter'   => '/(twitter\.com|x\.com)/i',
+            'vimeo'     => '/vimeo\.com/i',
+            'spotify'   => '/spotify\.com/i',
+            'linkedin'  => '/linkedin\.com/i',
+            'whatsapp'  => '/(wa\.me|whatsapp\.com)/i',
+        ];
+
+        foreach ($dominios as $tipo => $regex) {
+            if (preg_match($regex, $url)) {
+                return ['tipo' => $tipo, 'url' => $url];
+            }
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('post_extraer_links_detectados')) {
+
+    function post_extraer_links_detectados(?string $texto): array
+    {
+        return array_values(array_filter(
+            array_map(
+                fn($url) => post_detectar_tipo_link($url),
+                post_extraer_urls($texto ?? '')
+            )
+        ));
+    }
+}
+
+//REACCIONES
+
+if (!function_exists('post_contar_reacciones')) {
+    /**
+     * Cuenta las reacciones de un post.
+     */
+    function post_contar_reacciones(\App\Models\Post $post, int $userId): array
+    {
+        $counts     = post_reacciones_vacias();
+        $miReaccion = null;
+
+        foreach ($post->reactions()->get() as $r) {
+            if (isset($counts[$r->type])) {
+                $counts[$r->type]++;
+            }
+            if ($r->user_id === $userId) {
+                $miReaccion = $r->type;
+            }
+        }
+
+        return ['counts' => $counts, 'mi_reaccion' => $miReaccion];
+    }
+}
+
+//FORMATEO
+
+if (!function_exists('post_formatear_comentario')) {
+    /**
+     * Formatea un comentario.
+     */
+    function post_formatear_comentario($comment, string $scope = 'group'): array
+    {
+        $autor       = $comment->user;
+        $nombreAutor = post_nombre_publico($autor, $scope);
+
+        return [
+            'nombre'     => $nombreAutor,
+            'comentario' => $comment->comment,
+            'fecha'      => $comment->created_at->format('d/m/Y'),
+            'hora'       => $comment->created_at->format('H:i'),
+            'avatar_url' => $scope === 'group' ? ($autor->avatar_url ?? null) : null,
+        ];
+    }
+}
+
+if (!function_exists('post_formatear')) {
+    /**
+     * Formatea un post para respuesta de listado.
+     */
+    function post_formatear(\App\Models\Post $post, \App\Models\User $user_token, string $scope = 'group'): array
+    {
+        $comentarios = $post->comments()
+            ->where('activo', 1)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1))
+            ->get()
+            ->map(fn($c) => post_formatear_comentario($c, $scope))
+            ->toArray();
+
+        $reacciones = post_contar_reacciones($post, $user_token->id);
+
+        $autor       = $post->user;
+        $nombreAutor = post_nombre_publico($autor, $scope);
+
+        if ($scope === 'group') {
+            $user_data = [
+                'id'         => $autor->id,
+                'nombre'     => $nombreAutor,
+                'avatar_url' => $autor->avatar_url ?? null,
+            ];
+        } else {
+            $user_data = [
+                'nombre'     => $nombreAutor,
+                'avatar_url' => $autor->avatar_url ?? null,
+            ];
+        }
+
+        return [
+            'id'      => $post->id,
+            'user_id' => $scope === 'group' ? $post->user_id : null,
+            'post'    => $post->post,
+            'image'   => $post->image,
+            'video'   => $post->video,
+            'audio'   => $post->audio,
+            'user'    => $nombreAutor,
+
+            'user_data' => $user_data,
+
+            'fecha'       => $post->created_at->format('d/m/Y'),
+            'hora'        => $post->created_at->format('H:i'),
+            'comentarios' => $comentarios,
+            'reacciones'  => $reacciones['counts'],
+            'mi_reaccion' => $reacciones['mi_reaccion'],
+
+            'links' => post_extraer_links_detectados($post->post),
+        ];
+    }
+}
+
+if (!function_exists('post_formatear_nuevo')) {
+    /**
+     * Formatea un post recién creado.
+     */
+    function post_formatear_nuevo(\App\Models\Post $post, \App\Models\User $user_token): array
+    {
+        $nombreAutor = post_nombre_completo($user_token);
+
+        return [
+            'id'      => $post->id,
+            'user_id' => $post->user_id,
+            'post'    => $post->post,
+            'image'   => $post->image,
+            'video'   => $post->video,
+            'audio'   => $post->audio,
+            'user'    => $nombreAutor,
+
+            'user_data' => [
+                'id'         => $user_token->id,
+                'nombre'     => $nombreAutor,
+                'avatar_url' => $user_token->avatar_url ?? null,
+            ],
+
+            'fecha'       => $post->created_at->format('d/m/Y'),
+            'hora'        => $post->created_at->format('H:i'),
+            'comentarios' => [],
+            'reacciones'  => post_reacciones_vacias(),
+            'mi_reaccion' => null,
+
+            'links' => post_extraer_links_detectados($post->post),
+        ];
+    }
+}
+
+//SUBIDA DE ARCHIVOS DEL POST
+
+if (!function_exists('post_procesar_archivos_request')) {
+    /**
+     * Procesa img/video/audio del request y los asigna al post.
+     */
+    function post_procesar_archivos_request(\App\Models\Post $post, $request, int $userId): void
+    {
+        if ($request->hasFile('img')) {
+            $post->image = post_guardar_archivo(
+                $request->file('img'),
+                'img/publish',
+                time() . '_' . $userId
+            );
+        }
+
+        if ($request->hasFile('video')) {
+            $post->video = post_guardar_archivo(
+                $request->file('video'),
+                'img/publish',
+                time() . '_' . $userId . '_video'
+            );
+        }
+
+        if ($request->hasFile('audio')) {
+            $post->audio = post_guardar_archivo(
+                $request->file('audio'),
+                'audio/publish',
+                time() . '_' . $userId . '_audio'
+            );
+        }
+    }
+}
+
+// SCOPE
+
+if (!function_exists('post_normalizar_scope')) {
+    /**
+     * Normaliza el scope recibido ('group' por defecto).
+     */
+    function post_normalizar_scope(?string $scope): string
+    {
+        if (!in_array($scope, ['group', 'global'])) {
+            return 'group';
+        }
+
+        return $scope;
+    }
+}
+
+//NOTIFICACIONES
+
+if (!function_exists('post_notificar_miembros_grupo')) {
+    /**
+     * Notifica a los miembros del grupo (excepto al autor) sobre un nuevo post.
+     */
+    function post_notificar_miembros_grupo(\App\Models\Post $post): void
+    {
+        \App\Models\User::where('grupo_id', $post->group_id)
+            ->where('id', '!=', $post->user_id)
+            ->get()
+            ->each(function ($user) use ($post) {
+                $user->notify(new \App\Notifications\NewPostPublished($post));
+            });
+    }
+}
+
+
+// FUNCIONES (comunidad) comentarios
+
+if (!function_exists('comment_error_response')) {
+    function comment_error_response(string $msg, int $status = 400): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'res' => false,
+            'msg' => $msg,
+        ], $status);
+    }
+}
+
+if (!function_exists('comment_success_response')) {
+    function comment_success_response(string $msg, array $data = [], int $status = 200): \Illuminate\Http\JsonResponse
+    {
+        $payload = [
+            'res' => true,
+            'msg' => $msg,
+        ];
+
+        if (!empty($data)) {
+            $payload['data'] = $data;
+        }
+
+        return response()->json($payload, $status);
+    }
+}
+
+if (!function_exists('comment_validate_auth')) {
+    function comment_validate_auth(?\App\Models\User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user) {
+            return comment_error_response('Usuario no autenticado', 401);
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('comment_validate_post')) {
+    function comment_validate_post(?object $post): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$post || !$post->activo) {
+            return comment_error_response('Publicación no encontrada o inactiva', 404);
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('comment_find_or_fail')) {
+    function comment_find_or_fail(int $id): \App\Models\Comment|\Illuminate\Http\JsonResponse
+    {
+        $comment = \App\Models\Comment::find($id);
+
+        if (!$comment) {
+            return comment_error_response('Comentario no existe', 404);
+        }
+
+        return $comment;
+    }
+}
+
+if (!function_exists('comment_validate_ownership')) {
+    function comment_validate_ownership(\App\Models\User $user, \App\Models\Comment $comment): ?\Illuminate\Http\JsonResponse
+    {
+        if ($user->id != $comment->user_id) {
+            return comment_error_response('No autorizado', 403);
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('comment_build_full_name')) {
+    function comment_build_full_name(\App\Models\User $user): string
+    {
+        return trim(
+            ($user->nombre ?? '') . ' ' .
+            ($user->apellido_p ?? '') . ' ' .
+            ($user->apellido_m ?? '')
+        );
+    }
+}
+
+if (!function_exists('comment_format_payload')) {
+    function comment_format_payload(\App\Models\Comment $comment, \App\Models\User $user): array
+    {
+        return [
+            'id'         => $comment->id,
+            'nombre'     => comment_build_full_name($user),
+            'comentario' => $comment->comment,
+            'fecha'      => $comment->created_at->format('d/m/Y'),
+            'hora'       => $comment->created_at->format('H:i'),
+            'avatar_url' => $user->avatar_url ?? null,
+        ];
+    }
+}
+
+if (!function_exists('comment_log_error')) {
+    function comment_log_error(string $context, \Throwable $th): void
+    {
+        \Log::error("[{$context}] Error", ['error' => $th->getMessage()]);
+    }
+}
+
+
+

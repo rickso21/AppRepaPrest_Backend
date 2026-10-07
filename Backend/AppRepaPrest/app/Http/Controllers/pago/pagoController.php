@@ -101,7 +101,7 @@ class pagoController extends Controller
                 ], 400);
             }
 
-            // 🔹 BUSCAR PAGO PENDIENTE
+            //BUSCAR PAGO PENDIENTE
             $pagoPendiente = Pago::where('prestamo_id', $prestamo->id)
                 ->where('status', 0)
                 ->first();
@@ -290,7 +290,7 @@ class pagoController extends Controller
                 'fecha_confirmacion'        => null,
                 'fecha_desembolso_original' => $prestamo->fecha_desembolso,
                 'status'                    => 0,
-                'status_mp'                 => 'pending', // 🔑 valor inicial explícito
+                'status_mp'                 => 'pending',
             ]);
 
             // 🔹 GENERAR PREFERENCIA EN MERCADO PAGO
@@ -854,7 +854,7 @@ class pagoController extends Controller
                 ];
             }
 
-            // 🔹 Validar saldo mínimo permitido
+            //Validar saldo mínimo permitido
             $validacion_saldo = validarSaldoMinimo($deuda_actual, $monto_pagado, 10);
 
             if (! $validacion_saldo['valido']) {
