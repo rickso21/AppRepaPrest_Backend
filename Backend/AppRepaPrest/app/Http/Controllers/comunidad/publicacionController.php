@@ -5,13 +5,14 @@ namespace App\Http\Controllers\comunidad;
 use App\Events\PostCreated;
 use App\Events\PostReacted;
 use App\Events\PostDeleted;
+
 use App\Http\Controllers\Controller;
 use App\Http\Requests\comunidad\savePublishRequest;
 use App\Models\Post;
 use App\Models\PostReaction;
+use Illuminate\Http\Request;
 use App\Models\User;
 use App\Notifications\NewPostPublished;
-use Illuminate\Http\Request;
 
 class publicacionController extends Controller
 {
@@ -28,9 +29,7 @@ class publicacionController extends Controller
         'angry' => 0,
     ];
 
-    // ================================================================
-    // LISTAR
-    // ================================================================
+
     public function index(Request $request)
     {
         $user_token = $request->user();
@@ -39,28 +38,32 @@ class publicacionController extends Controller
             return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
-        $user_token->loadMissing('grupo');
-
         $scope = $request->input('scope', 'group');
-        if (!in_array($scope, ['group', 'global'], true)) {
+
+        if (!in_array($scope, ['group', 'global'])) {
             $scope = 'group';
         }
+
 
         $query = Post::where('activo', 1);
 
         if ($scope === 'group') {
+            // Grupos visibles: principal + emergencia + monitoreo
             $gruposVisibles = $this->gruposVisiblesDe($user_token);
 
+            // Si el front envía un group_id específico, filtramos SOLO por ese
             $grupoFiltro = $request->input('group_id');
 
             if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
                 $query->where('group_id', (int) $grupoFiltro);
             } else {
+                // Fallback: todos los grupos visibles (comportamiento anterior)
                 $query->whereIn('group_id', $gruposVisibles);
             }
 
             $query->whereHas('user', fn($q) => $q->where('status_id', 1));
         } else {
+
             $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
                 ->pluck('id')
                 ->all();
@@ -69,37 +72,22 @@ class publicacionController extends Controller
                 ->whereHas('user', fn($q) => $q->where('status_id', 1));
         }
 
-        $posts = $query
-            ->with([
-                'user',
-                'reactions',
-                'comments' => function ($q) {
-                    $q->where('activo', 1)
-                      ->whereHas('user', fn($qq) => $qq->where('status_id', 1))
-                      ->with('user');
-                },
-            ])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $posts = $query->orderBy('created_at', 'desc')->get();
 
-        $publicaciones = $posts->map(
-            fn($post) => $this->formatearPost($post, $user_token, $scope)
-        );
+
+        $publicaciones = $posts->map(function ($post) use ($user_token, $scope) {
+            return $this->formatearPost($post, $user_token, $scope);
+        });
 
         return response()->json([
             'res'           => true,
-            'grupo'         => $user_token->grupo?->group_name,
+            'grupo'         => $user_token->grupo->group_name,
             'scope'         => $scope,
-            'img_grupo'     => $user_token->grupo
-                ? public_path('/img/group/' . $user_token->grupo->img_group)
-                : null,
+            'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
             'publicaciones' => $publicaciones,
         ], 200);
     }
 
-    // ================================================================
-    // CREAR
-    // ================================================================
     public function store(savePublishRequest $request)
     {
         $user_token = $request->user();
@@ -108,7 +96,7 @@ class publicacionController extends Controller
             return response()->json(['res' => false, 'msg' => 'Usuario no autenticado'], 401);
         }
 
-        // 1) Validar permisos ANTES de tocar disco
+        // 👇 PRIMERO validar permisos
         $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
 
         if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
@@ -118,7 +106,7 @@ class publicacionController extends Controller
             ], 403);
         }
 
-        // 2) Instanciar post y guardar archivos
+        // 👇 DESPUÉS guardar archivos
         $post = new Post();
 
         if ($request->hasFile('img')) {
@@ -145,25 +133,41 @@ class publicacionController extends Controller
             );
         }
 
-        // 3) Asignar campos y guardar
+        // El cliente puede enviar group_id opcional. Si no viene, va al principal.
+        $groupDestino = (int) $request->input('group_id', $user_token->grupo_id);
+
+        if (!$this->usuarioPuedePublicarEn($user_token, $groupDestino)) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'No tienes permiso para publicar en ese grupo',
+            ], 403);
+        }
+
+        // 3. Guardar post
         $post->post     = $request->txt;
         $post->user_id  = $user_token->id;
+        //$post->group_id = $user_token->grupo_id;
         $post->group_id = $groupDestino;
         $post->activo   = 1;
 
         try {
             $post->save();
-
-            // 4) Notificar a los demás miembros del grupo.
-            //    Debe ser encolado (NewPostPublished implements ShouldQueue)
+            // Notificar a los demás miembros del grupo (excepto al autor)
             User::where('grupo_id', $post->group_id)
                 ->where('id', '!=', $post->user_id)
-                ->whereNotNull('expo_push_token')
-                ->where('expo_push_token', '!=', '')
                 ->get()
-                ->each(fn($user) => $user->notify(new NewPostPublished($post)));
+                ->each(function ($user) use ($post) {
+                    $user->notify(new NewPostPublished($post));
+                });
 
-            // 5) Broadcast (encolado por el propio Event al implementar ShouldQueue)
+            \Log::info('[publicacion.store] Post guardado', [
+                'id'    => $post->id,
+                'image' => $post->image,
+                'video' => $post->video,
+                'audio' => $post->audio,
+
+            ]);
+
             broadcast(new PostCreated($post))->toOthers();
 
             return response()->json([
@@ -181,9 +185,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ================================================================
-    // ACTUALIZAR
-    // ================================================================
+
     public function update(savePublishRequest $request, $id)
     {
         $user_token = $request->user();
@@ -246,9 +248,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ================================================================
-    // ELIMINAR
-    // ================================================================
+
     public function destroy(Request $request, $id)
     {
         $user_token = $request->user();
@@ -277,7 +277,12 @@ class publicacionController extends Controller
 
             $post->delete();
 
-            broadcast(new PostDeleted($postId, $groupId, $userId))->toOthers();
+            broadcast(new \App\Events\PostDeleted($postId, $groupId, $userId))->toOthers();
+
+            \Log::info('[publicacion.destroy] Post eliminado', [
+                'id'       => $postId,
+                'group_id' => $groupId,
+            ]);
 
             return response()->json([
                 'res' => true,
@@ -291,9 +296,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ================================================================
-    // REACCIONAR
-    // ================================================================
+
     public function reaccionar(Request $request, $id)
     {
         $user = $request->user();
@@ -311,8 +314,7 @@ class publicacionController extends Controller
         if (!$post || !$this->usuarioPuedePublicarEn($user, (int) $post->group_id)) {
             return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
         }
-
-        $existente = PostReaction::where('post_id', $id)
+        $existente    = PostReaction::where('post_id', $id)
             ->where('user_id', $user->id)
             ->first();
 
@@ -351,13 +353,17 @@ class publicacionController extends Controller
 
     private function formatearPost(Post $post, $user_token, string $scope = 'group'): array
     {
-        $comentarios = $post->comments
-            ->map(fn($c) => $this->formatearComentario($c, $scope))
+        $comentarios = $post->comments()
+            ->where('activo', 1)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1))
+            ->get()
+            ->map(fn($c) => $this->formatearComentario($c, $scope))   // 👈 pasar scope
             ->toArray();
 
         $reacciones = $this->contarReacciones($post, $user_token->id);
 
-        $autor       = $post->user;
+        $autor = $post->user;
+
         $nombreAutor = $this->nombrePublico($autor, $scope);
 
         if ($scope === 'group') {
@@ -367,6 +373,7 @@ class publicacionController extends Controller
                 'avatar_url' => $autor->avatar_url ?? null,
             ];
         } else {
+            // En global: sin id, sin avatar (para no exponer identidad)
             $user_data = [
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $autor->avatar_url ?? null,
@@ -394,6 +401,9 @@ class publicacionController extends Controller
         ];
     }
 
+    /**
+     * Formatea un post recién creado.
+     */
     private function formatearPostNuevo(Post $post, $user_token): array
     {
         $nombreAutor = $this->nombreCompleto($user_token);
@@ -419,13 +429,17 @@ class publicacionController extends Controller
             'reacciones'  => self::REACCIONES_VACIAS,
             'mi_reaccion' => null,
 
-            'links' => $this->extraerLinksDetectados($post->post),
+            'links' => $this->extraerLinksDetectados($post->post),   // ✅ funciona
         ];
     }
 
+    /**
+     * Formatea un comentario.
+     */
     private function formatearComentario($comment, string $scope = 'group'): array
     {
-        $autor       = $comment->user;
+        $autor = $comment->user;
+
         $nombreAutor = $this->nombrePublico($autor, $scope);
 
         return [
@@ -437,36 +451,42 @@ class publicacionController extends Controller
         ];
     }
 
+    /**
+     * Cuenta las reacciones de un post.
+     */
     private function contarReacciones(Post $post, int $userId): array
     {
         $counts     = self::REACCIONES_VACIAS;
         $miReaccion = null;
 
-        foreach ($post->reactions as $r) {
-            if (isset($counts[$r->type])) $counts[$r->type]++;
-            if ($r->user_id === $userId) $miReaccion = $r->type;
+        foreach ($post->reactions()->get() as $r) {
+            if (isset($counts[$r->type])) {
+                $counts[$r->type]++;
+            }
+            if ($r->user_id === $userId) {
+                $miReaccion = $r->type;
+            }
         }
 
         return ['counts' => $counts, 'mi_reaccion' => $miReaccion];
     }
 
+    /**
+     * Guarda un archivo en `public/{$carpeta}`.
+     */
     private function guardarArchivo($file, string $carpeta, string $baseName): string
     {
-        $ext  = strtolower($file->getClientOriginalExtension() ?: 'bin');
+        $ext  = $file->getClientOriginalExtension() ?: 'bin';
         $name = $baseName . '.' . $ext;
-        $size = $file->getSize();
-        $mime = $file->getMimeType();
+        $size = $file->getSize();          // ✅ antes de mover
+        $mime = $file->getMimeType();      // ✅ antes de mover
 
         $path = public_path($carpeta);
         if (!file_exists($path)) {
             mkdir($path, 0775, true);
         }
 
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
-            $this->comprimirImagen($file->getRealPath(), $path . '/' . $name, $ext);
-        } else {
-            $file->move($path, $name);
-        }
+        $file->move($path, $name);
 
         \Log::info('[publicacion] Archivo guardado', [
             'carpeta' => $carpeta,
@@ -478,56 +498,23 @@ class publicacionController extends Controller
         return $name;
     }
 
-    private function comprimirImagen(string $origen, string $destino, string $ext): void
-    {
-        if (!function_exists('imagecreatefromstring')) {
-            copy($origen, $destino);
-            return;
-        }
-
-        $data = file_get_contents($origen);
-        $img  = @imagecreatefromstring($data);
-
-        if (!$img) {
-            copy($origen, $destino);
-            return;
-        }
-
-        $w    = imagesx($img);
-        $h    = imagesy($img);
-        $maxW = 1600;
-
-        if ($w > $maxW) {
-            $nuevoH = (int) ($h * ($maxW / $w));
-            $tmp    = imagecreatetruecolor($maxW, $nuevoH);
-            imagecopyresampled($tmp, $img, 0, 0, 0, 0, $maxW, $nuevoH, $w, $h);
-            imagedestroy($img);
-            $img = $tmp;
-        }
-
-        switch ($ext) {
-            case 'png':
-                imagepng($img, $destino, 7);
-                break;
-            case 'webp':
-                imagewebp($img, $destino, 80);
-                break;
-            default:
-                imagejpeg($img, $destino, 80);
-        }
-
-        imagedestroy($img);
-    }
-
+    /**
+     * Devuelve el nombre completo de un usuario.
+     */
     private function nombreCompleto($user): string
     {
         return trim(
             ($user->nombre ?? '') . ' ' .
-            ($user->apellido_p ?? '') . ' ' .
-            ($user->apellido_m ?? '')
+                ($user->apellido_p ?? '') . ' ' .
+                ($user->apellido_m ?? '')
         );
     }
 
+    /**
+     * Extrae las URLs del texto de una publicación.
+     *
+     * @return string[]
+     */
     private function extraerUrls(string $texto): array
     {
         if (empty($texto)) return [];
@@ -538,6 +525,9 @@ class publicacionController extends Controller
         return array_values(array_unique($matches[0] ?? []));
     }
 
+    /**
+     * Detecta el tipo de link según el dominio.
+     */
     private function detectarTipoLink(string $url): ?array
     {
         $dominios = [
@@ -561,6 +551,11 @@ class publicacionController extends Controller
         return null;
     }
 
+    /**
+     * Combina extraerUrls + detectarTipoLink.
+     *
+     * @return array<int, array{tipo: string, url: string}>
+     */
     private function extraerLinksDetectados(?string $texto): array
     {
         return array_values(array_filter(
@@ -571,6 +566,12 @@ class publicacionController extends Controller
         ));
     }
 
+    /**
+     * Devuelve el nombre del usuario según el scope.
+     *
+     * - scope = "group"  → nombre completo (nombre + apellidos)
+     * - scope = "global" → solo el primer nombre (privacidad)
+     */
     private function nombrePublico($user, string $scope = 'group'): string
     {
         if ($scope === 'global') {
@@ -580,13 +581,24 @@ class publicacionController extends Controller
         return $this->nombreCompleto($user);
     }
 
+    /**
+     * Devuelve los IDs de grupos a los que el usuario puede acceder:
+     * su grupo principal y el grupo de emergencias (si existe).
+     */
     private function gruposVisiblesDe($user): array
     {
-        if (!$user->grupo_id) return [];
+        if (!$user->grupo_id) {
+            return [];
+        }
 
         return \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
     }
 
+    /**
+     * Valida que el usuario pueda publicar en el grupo indicado:
+     * - Debe ser su grupo principal, o
+     * - El grupo de emergencias cuyo padre es su principal.
+     */
     private function usuarioPuedePublicarEn($user, int $grupoId): bool
     {
         if (!$user->grupo_id) return false;
