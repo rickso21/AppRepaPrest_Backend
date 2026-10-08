@@ -12,10 +12,6 @@ class PostDeleted implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    /**
-     * Necesitamos guardar estos datos ANTES de borrar el post,
-     * porque una vez eliminado no podemos acceder a $post->id ni $post->group_id.
-     */
     public int $postId;
     public int $groupId;
     public int $userId;
@@ -25,17 +21,8 @@ class PostDeleted implements ShouldBroadcastNow
         $this->postId  = $postId;
         $this->groupId = $groupId;
         $this->userId  = $userId;
-
-        \Log::info('[PostDeleted] Evento instanciado', [
-            'post_id'  => $postId,
-            'group_id' => $groupId,
-            'user_id'  => $userId,
-        ]);
     }
 
-    /**
-     * Canal privado del grupo.
-     */
     public function broadcastOn(): array
     {
         return [
@@ -43,17 +30,11 @@ class PostDeleted implements ShouldBroadcastNow
         ];
     }
 
-    /**
-     * Nombre del evento en el frontend (Echo.listen('PostDeleted')).
-     */
     public function broadcastAs(): string
     {
-        return 'PostDeleted';
+        return 'post.deleted';   // ✅ con namespace
     }
 
-    /**
-     * Payload que recibe el cliente.
-     */
     public function broadcastWith(): array
     {
         return [

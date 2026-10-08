@@ -3,7 +3,6 @@
 namespace App\Events;
 
 use App\Models\Post;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -18,35 +17,27 @@ class PostCreated implements ShouldBroadcastNow
     {
     }
 
-    /**
-     * Canal privado por grupo.
-     */
     public function broadcastOn(): array
-{
-    $canalId = \App\Models\Grupo::canalPrincipalDe((int) $this->post->group_id);
-    return [ new PrivateChannel('group.' . $canalId) ];
-}
-
-    /**
-     * Nombre del evento tal como lo escuchará el front (Echo.listen('PostCreated')).
-     */
-    public function broadcastAs(): string
     {
-        return 'PostCreated';
+        $canalId = \App\Models\Grupo::canalPrincipalDe((int) $this->post->group_id);
+
+        return [new PrivateChannel('group.' . $canalId)];
     }
 
-    /**
-     * Payload: lo que recibe el cliente.
-     */
+    public function broadcastAs(): string
+    {
+        return 'post.created';   // ✅ con namespace
+    }
+
     public function broadcastWith(): array
     {
         return [
-            'id'        => $this->post->id,
-            'post'      => $this->post->post,
-            'image'     => $this->post->image,
-            'user_id'   => $this->post->user_id,
-            'group_id'  => $this->post->group_id,
-            'created_at'=> $this->post->created_at?->toISOString(),
+            'id'         => $this->post->id,
+            'post'       => $this->post->post,
+            'image'      => $this->post->image,
+            'user_id'    => $this->post->user_id,
+            'group_id'   => $this->post->group_id,
+            'created_at' => $this->post->created_at?->toISOString(),
         ];
     }
 }

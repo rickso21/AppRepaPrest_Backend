@@ -31,36 +31,25 @@ class PostReacted implements ShouldBroadcastNow
         $this->type         = $type;
         $this->accion       = $accion;
         $this->tipoAnterior = $tipoAnterior;
-
-        \Log::info('[PostReacted] Evento instanciado', [
-            'post_id'       => $post->id,
-            'group_id'      => $post->group_id,
-            'user_id'       => $userId,
-            'type'          => $type,
-            'accion'        => $accion,
-            'tipoAnterior'  => $tipoAnterior,
-            'timestamp'     => now()->toISOString(),
-        ]);
     }
 
     public function broadcastOn(): array
     {
         $groupId = Post::find($this->postId)?->group_id;
 
-        \Log::info('[PostReacted] broadcastOn llamado', [
-            'post_id'  => $this->postId,
-            'groupId'  => $groupId,
-            'canal'    => 'group.' . $groupId,
-        ]);
-
         return [
             new PrivateChannel('group.' . $groupId),
         ];
     }
 
+    /**
+     * ✅ Nombre del evento con namespace (obligatorio para Pusher-js + Reverb).
+     * Pusher-js SOLO reconoce eventos de aplicación si empiezan con punto.
+     * El `.` se agrega implícitamente al bindear en el cliente.
+     */
     public function broadcastAs(): string
     {
-        return 'PostReacted';
+        return 'post.reacted';
     }
 
     public function broadcastWith(): array
