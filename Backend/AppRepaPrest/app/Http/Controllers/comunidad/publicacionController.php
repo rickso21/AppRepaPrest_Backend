@@ -14,9 +14,7 @@ use Illuminate\Http\Request;
 
 class publicacionController extends Controller
 {
-    // ============================================================
     // LISTADO
-    // ============================================================
     public function index(Request $request)
     {
         $user_token = $request->user();
@@ -77,9 +75,7 @@ class publicacionController extends Controller
         ], 200);
     }
 
-    // ============================================================
     // CREAR
-    // ============================================================
     public function store(savePublishRequest $request)
     {
         $user_token = $request->user();
@@ -106,9 +102,7 @@ class publicacionController extends Controller
         try {
             $post->save();
 
-            // ✅ La notificación sigue siendo síncrona, pero el helper
-            //    ahora usa chunkById + select('id') para no cargar
-            //    toda la tabla en memoria.
+
             post_notificar_miembros_grupo($post);
 
             \Log::info('[publicacion.store] Post guardado', [
@@ -131,9 +125,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ============================================================
     // ACTUALIZAR
-    // ============================================================
     public function update(savePublishRequest $request, $id)
     {
         $user_token = $request->user();
@@ -165,9 +157,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ============================================================
     // ELIMINAR
-    // ============================================================
     public function destroy(Request $request, $id)
     {
         $user_token = $request->user();
@@ -206,9 +196,7 @@ class publicacionController extends Controller
         }
     }
 
-    // ============================================================
     // REACCIONAR
-    // ============================================================
     public function reaccionar(Request $request, $id)
     {
         $user = $request->user();

@@ -2023,14 +2023,7 @@ if (!function_exists('post_normalizar_scope')) {
 // ---------- NOTIFICACIONES ----------
 
 if (!function_exists('post_notificar_miembros_grupo')) {
-    /**
-     * Notifica a los miembros del grupo (excepto al autor).
-     *
-     * ✅ Ahora usa chunkById + select('id') para NO cargar toda la tabla
-     *    en memoria y evitar timeouts en grupos grandes.
-     *
-     * Sigue siendo síncrona (no hay queue en el proyecto), pero optimizada.
-     */
+
     function post_notificar_miembros_grupo(\App\Models\Post $post): void
     {
         \App\Models\User::where('grupo_id', $post->group_id)
@@ -2044,7 +2037,7 @@ if (!function_exists('post_notificar_miembros_grupo')) {
     }
 }
 
-// ---------- FUNCIONES (comunidad) comentarios ----------
+// ---------- FUNCIONES  ----------
 
 if (!function_exists('comment_error_response')) {
     function comment_error_response(string $msg, int $status = 400): \Illuminate\Http\JsonResponse
