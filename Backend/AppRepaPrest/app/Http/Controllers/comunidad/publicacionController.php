@@ -16,51 +16,63 @@ class publicacionController extends Controller
 {
     // LISTADO
     public function index(Request $request)
-    {
-        $user_token = $request->user();
+{
+    $user_token = $request->user();
 
-        if ($response = post_validate_auth($user_token)) {
-            return $response;
-        }
-
-        $scope = post_normalizar_scope($request->input('scope', 'group'));
-
-        $query = Post::where('activo', 1);
-
-        if ($scope === 'group') {
-            $gruposVisibles = post_grupos_visibles_de($user_token);
-            $grupoFiltro    = $request->input('group_id');
-
-            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-                $query->where('group_id', (int) $grupoFiltro);
-            } else {
-                $query->whereIn('group_id', $gruposVisibles);
-            }
-
-            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
-        } else {
-            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-                ->pluck('id')
-                ->all();
-
-            $query->whereIn('group_id', $idsPrincipales)
-                ->whereHas('user', fn($q) => $q->where('status_id', 1));
-        }
-
-        $posts = $query->orderBy('created_at', 'desc')->get();
-
-        $publicaciones = $posts->map(
-            fn($post) => post_formatear($post, $user_token, $scope)
-        );
-
-        return response()->json([
-            'res'           => true,
-            'grupo'         => $user_token->grupo->group_name,
-            'scope'         => $scope,
-            'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
-            'publicaciones' => $publicaciones,
-        ], 200);
+    if ($response = post_validate_auth($user_token)) {
+        return $response;
     }
+
+    $scope = post_normalizar_scope($request->input('scope', 'group'));
+
+    $query = Post::with([
+            'user:id,nombre,apellido_p,apellido_m,avatar_url,status_id',
+            'comments' => fn($q) => $q->where('activo', 1)
+                ->with('user:id,nombre,apellido_p,apellido_m,avatar_url,status_id'),
+            'reactions:id,post_id,user_id,type',
+        ])
+        ->where('activo', 1);
+
+    if ($scope === 'group') {
+        $gruposVisibles = post_grupos_visibles_de($user_token);
+        $grupoFiltro    = $request->input('group_id');
+
+        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+            $query->where('group_id', (int) $grupoFiltro);
+        } else {
+            $query->whereIn('group_id', $gruposVisibles);
+        }
+
+        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+    } else {
+        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+            ->pluck('id')
+            ->all();
+
+        $query->whereIn('group_id', $idsPrincipales)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1));
+    }
+
+    $perPage = (int) $request->input('per_page', 20);
+    $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+    $publicaciones = collect($posts->items())
+        ->map(fn($post) => post_formatear($post, $user_token, $scope));
+
+    return response()->json([
+        'res'           => true,
+        'grupo'         => $user_token->grupo->group_name,
+        'scope'         => $scope,
+        'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
+        'publicaciones' => $publicaciones,
+        'pagination'    => [
+            'current_page' => $posts->currentPage(),
+            'last_page'    => $posts->lastPage(),
+            'per_page'     => $posts->perPage(),
+            'total'        => $posts->total(),
+        ],
+    ], 200);
+}
 
     // CREAR
     public function store(savePublishRequest $request)
@@ -104,7 +116,6 @@ class publicacionController extends Controller
                 'Publicación guardada correctamente',
                 ['data' => post_formatear_nuevo($post, $user_token)]
             );
-
         } catch (\Throwable $th) {
             \Log::error('[publicacion.store] Error', ['error' => $th->getMessage()]);
 
@@ -139,7 +150,6 @@ class publicacionController extends Controller
             $post->save();
 
             return post_success_response('Publicación actualizada correctamente');
-
         } catch (\Throwable $th) {
             return post_error_response($th->getMessage(), 409);
         }
@@ -179,7 +189,6 @@ class publicacionController extends Controller
             ]);
 
             return post_success_response('Publicación eliminada correctamente');
-
         } catch (\Throwable $th) {
             return post_error_response($th->getMessage(), 500);
         }

@@ -1883,11 +1883,9 @@ if (!function_exists('post_contar_reacciones')) {
 //FORMATEO
 
 if (!function_exists('post_formatear_comentario')) {
-    /**
-     * Formatea un comentario.
-     */
     function post_formatear_comentario($comment, string $scope = 'group'): array
     {
+        // ✅ $comment->user viene eager-loaded
         $autor       = $comment->user;
         $nombreAutor = post_nombre_publico($autor, $scope);
 
@@ -1902,19 +1900,44 @@ if (!function_exists('post_formatear_comentario')) {
 }
 
 if (!function_exists('post_formatear')) {
-    /**
-     * Formatea un post para respuesta de listado.
-     */
     function post_formatear(\App\Models\Post $post, \App\Models\User $user_token, string $scope = 'group'): array
     {
-        $comentarios = $post->comments()
-            ->where('activo', 1)
-            ->whereHas('user', fn($q) => $q->where('status_id', 1))
-            ->get()
-            ->map(fn($c) => post_formatear_comentario($c, $scope))
-            ->toArray();
+        // ✅ Ya vienen eager-loaded desde el controlador (con 'comments.user' y 'reactions')
+        if ($post->relationLoaded('comments')) {
+            $comentarios = $post->comments
+                ->where('activo', 1)
+                ->filter(fn($c) => optional($c->user)->status_id === 1)
+                ->map(fn($c) => post_formatear_comentario($c, $scope))
+                ->values()
+                ->toArray();
+        } else {
+            // Fallback por si algún otro sitio llama sin eager loading
+            $comentarios = $post->comments()
+                ->where('activo', 1)
+                ->whereHas('user', fn($q) => $q->where('status_id', 1))
+                ->with('user')
+                ->get()
+                ->map(fn($c) => post_formatear_comentario($c, $scope))
+                ->toArray();
+        }
 
-        $reacciones = post_contar_reacciones($post, $user_token->id);
+        // ✅ Reacciones desde la colección cargada
+        $counts     = post_reacciones_vacias();
+        $miReaccion = null;
+        if ($post->relationLoaded('reactions')) {
+            foreach ($post->reactions as $r) {
+                if (isset($counts[$r->type])) {
+                    $counts[$r->type]++;
+                }
+                if ($r->user_id === $user_token->id) {
+                    $miReaccion = $r->type;
+                }
+            }
+        } else {
+            $tmp        = post_contar_reacciones($post, $user_token->id);
+            $counts     = $tmp['counts'];
+            $miReaccion = $tmp['mi_reaccion'];
+        }
 
         $autor       = $post->user;
         $nombreAutor = post_nombre_publico($autor, $scope);
@@ -1940,16 +1963,13 @@ if (!function_exists('post_formatear')) {
             'video'   => $post->video,
             'audio'   => $post->audio,
             'user'    => $nombreAutor,
-
-            'user_data' => $user_data,
-
+            'user_data'   => $user_data,
             'fecha'       => $post->created_at->format('d/m/Y'),
             'hora'        => $post->created_at->format('H:i'),
             'comentarios' => $comentarios,
-            'reacciones'  => $reacciones['counts'],
-            'mi_reaccion' => $reacciones['mi_reaccion'],
-
-            'links' => post_extraer_links_detectados($post->post),
+            'reacciones'  => $counts,
+            'mi_reaccion' => $miReaccion,
+            'links'       => post_extraer_links_detectados($post->post),
         ];
     }
 }
