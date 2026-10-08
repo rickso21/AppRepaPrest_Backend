@@ -15,7 +15,7 @@ use Illuminate\Http\Request;
 class publicacionController extends Controller
 {
     // LISTADO
-    public function index(Request $request)
+   public function index(Request $request)
 {
     $user_token = $request->user();
 
@@ -26,9 +26,9 @@ class publicacionController extends Controller
     $scope = post_normalizar_scope($request->input('scope', 'group'));
 
     $query = Post::with([
-            'user:id,nombre,apellido_p,apellido_m,avatar_url,status_id',
+            'user:id,nombre,apellido_p,apellido_m,avatar,status_id',
             'comments' => fn($q) => $q->where('activo', 1)
-                ->with('user:id,nombre,apellido_p,apellido_m,avatar_url,status_id'),
+                ->with('user:id,nombre,apellido_p,apellido_m,avatar,status_id'),
             'reactions:id,post_id,user_id,type',
         ])
         ->where('activo', 1);
@@ -61,9 +61,11 @@ class publicacionController extends Controller
 
     return response()->json([
         'res'           => true,
-        'grupo'         => $user_token->grupo->group_name,
+        'grupo'         => optional($user_token->grupo)->group_name,
         'scope'         => $scope,
-        'img_grupo'     => public_path('/img/group/' . $user_token->grupo->img_group),
+        'img_grupo'     => $user_token->grupo
+            ? public_path('/img/group/' . $user_token->grupo->img_group)
+            : null,
         'publicaciones' => $publicaciones,
         'pagination'    => [
             'current_page' => $posts->currentPage(),

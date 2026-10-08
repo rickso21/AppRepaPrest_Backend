@@ -1885,8 +1885,7 @@ if (!function_exists('post_contar_reacciones')) {
 if (!function_exists('post_formatear_comentario')) {
     function post_formatear_comentario($comment, string $scope = 'group'): array
     {
-        // ✅ $comment->user viene eager-loaded
-        $autor       = $comment->user;
+        $autor       = $comment->user;  // ✅ ya viene cargado con with('user')
         $nombreAutor = post_nombre_publico($autor, $scope);
 
         return [
@@ -1902,7 +1901,7 @@ if (!function_exists('post_formatear_comentario')) {
 if (!function_exists('post_formatear')) {
     function post_formatear(\App\Models\Post $post, \App\Models\User $user_token, string $scope = 'group'): array
     {
-        // ✅ Ya vienen eager-loaded desde el controlador (con 'comments.user' y 'reactions')
+        // ✅ Si ya vienen cargados, usamos la colección en memoria (sin queries)
         if ($post->relationLoaded('comments')) {
             $comentarios = $post->comments
                 ->where('activo', 1)
@@ -1911,7 +1910,6 @@ if (!function_exists('post_formatear')) {
                 ->values()
                 ->toArray();
         } else {
-            // Fallback por si algún otro sitio llama sin eager loading
             $comentarios = $post->comments()
                 ->where('activo', 1)
                 ->whereHas('user', fn($q) => $q->where('status_id', 1))
@@ -1921,9 +1919,10 @@ if (!function_exists('post_formatear')) {
                 ->toArray();
         }
 
-        // ✅ Reacciones desde la colección cargada
+        // ✅ Reacciones desde la colección en memoria si está cargada
         $counts     = post_reacciones_vacias();
         $miReaccion = null;
+
         if ($post->relationLoaded('reactions')) {
             foreach ($post->reactions as $r) {
                 if (isset($counts[$r->type])) {
@@ -1934,7 +1933,7 @@ if (!function_exists('post_formatear')) {
                 }
             }
         } else {
-            $tmp        = post_contar_reacciones($post, $user_token->id);
+            $tmp = post_contar_reacciones($post, $user_token->id);
             $counts     = $tmp['counts'];
             $miReaccion = $tmp['mi_reaccion'];
         }
@@ -1947,6 +1946,7 @@ if (!function_exists('post_formatear')) {
                 'id'         => $autor->id,
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $autor->avatar_url ?? null,
+                // ↑ accessor, funciona porque 'avatar' viene en el with()
             ];
         } else {
             $user_data = [
