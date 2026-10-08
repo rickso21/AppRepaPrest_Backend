@@ -14,69 +14,72 @@ use Illuminate\Http\Request;
 
 class publicacionController extends Controller
 {
+    // ============================================================
     // LISTADO
-   public function index(Request $request)
-{
-    $user_token = $request->user();
+    // ============================================================
+    public function index(Request $request)
+    {
+        $user_token = $request->user();
 
-    if ($response = post_validate_auth($user_token)) {
-        return $response;
-    }
-
-    $scope = post_normalizar_scope($request->input('scope', 'group'));
-
-    $query = Post::with([
-            'user:id,nombre,apellido_p,apellido_m,avatar,status_id',
-            'comments' => fn($q) => $q->where('activo', 1)
-                ->with('user:id,nombre,apellido_p,apellido_m,avatar,status_id'),
-            'reactions:id,post_id,user_id,type',
-        ])
-        ->where('activo', 1);
-
-    if ($scope === 'group') {
-        $gruposVisibles = post_grupos_visibles_de($user_token);
-        $grupoFiltro    = $request->input('group_id');
-
-        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-            $query->where('group_id', (int) $grupoFiltro);
-        } else {
-            $query->whereIn('group_id', $gruposVisibles);
+        if ($response = post_validate_auth($user_token)) {
+            return $response;
         }
 
-        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
-    } else {
-        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-            ->pluck('id')
-            ->all();
+        $scope = post_normalizar_scope($request->input('scope', 'group'));
 
-        $query->whereIn('group_id', $idsPrincipales)
-            ->whereHas('user', fn($q) => $q->where('status_id', 1));
+        $query = Post::with([
+                'user',
+                'comments' => fn($q) => $q->where('activo', 1)->with('user'),
+                'reactions',
+            ])
+            ->where('activo', 1);
+
+        if ($scope === 'group') {
+            $gruposVisibles = post_grupos_visibles_de($user_token);
+            $grupoFiltro    = $request->input('group_id');
+
+            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+                $query->where('group_id', (int) $grupoFiltro);
+            } else {
+                $query->whereIn('group_id', $gruposVisibles);
+            }
+
+            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+        } else {
+            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+                ->pluck('id')
+                ->all();
+
+            $query->whereIn('group_id', $idsPrincipales)
+                ->whereHas('user', fn($q) => $q->where('status_id', 1));
+        }
+
+        $perPage = (int) $request->input('per_page', 20);
+        $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        $publicaciones = collect($posts->items())
+            ->map(fn($post) => post_formatear($post, $user_token, $scope));
+
+        return response()->json([
+            'res'           => true,
+            'grupo'         => optional($user_token->grupo)->group_name,
+            'scope'         => $scope,
+            'img_grupo'     => $user_token->grupo
+                ? public_path('/img/group/' . $user_token->grupo->img_group)
+                : null,
+            'publicaciones' => $publicaciones,
+            'pagination'    => [
+                'current_page' => $posts->currentPage(),
+                'last_page'    => $posts->lastPage(),
+                'per_page'     => $posts->perPage(),
+                'total'        => $posts->total(),
+            ],
+        ], 200);
     }
 
-    $perPage = (int) $request->input('per_page', 20);
-    $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
-
-    $publicaciones = collect($posts->items())
-        ->map(fn($post) => post_formatear($post, $user_token, $scope));
-
-    return response()->json([
-        'res'           => true,
-        'grupo'         => optional($user_token->grupo)->group_name,
-        'scope'         => $scope,
-        'img_grupo'     => $user_token->grupo
-            ? public_path('/img/group/' . $user_token->grupo->img_group)
-            : null,
-        'publicaciones' => $publicaciones,
-        'pagination'    => [
-            'current_page' => $posts->currentPage(),
-            'last_page'    => $posts->lastPage(),
-            'per_page'     => $posts->perPage(),
-            'total'        => $posts->total(),
-        ],
-    ], 200);
-}
-
+    // ============================================================
     // CREAR
+    // ============================================================
     public function store(savePublishRequest $request)
     {
         $user_token = $request->user();
@@ -103,6 +106,9 @@ class publicacionController extends Controller
         try {
             $post->save();
 
+            // ✅ La notificación sigue siendo síncrona, pero el helper
+            //    ahora usa chunkById + select('id') para no cargar
+            //    toda la tabla en memoria.
             post_notificar_miembros_grupo($post);
 
             \Log::info('[publicacion.store] Post guardado', [
@@ -125,7 +131,9 @@ class publicacionController extends Controller
         }
     }
 
+    // ============================================================
     // ACTUALIZAR
+    // ============================================================
     public function update(savePublishRequest $request, $id)
     {
         $user_token = $request->user();
@@ -157,7 +165,9 @@ class publicacionController extends Controller
         }
     }
 
+    // ============================================================
     // ELIMINAR
+    // ============================================================
     public function destroy(Request $request, $id)
     {
         $user_token = $request->user();
@@ -196,7 +206,9 @@ class publicacionController extends Controller
         }
     }
 
+    // ============================================================
     // REACCIONAR
+    // ============================================================
     public function reaccionar(Request $request, $id)
     {
         $user = $request->user();

@@ -24,6 +24,6 @@ class Post extends Model
 
     public function reactions()
 {
-    return $this->hasMany(PostReaction::class);
+        return $this->hasMany(PostReaction::class, 'post_id');
 }
 }

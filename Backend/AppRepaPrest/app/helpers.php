@@ -1636,9 +1636,7 @@ if (!function_exists('whatsappUrlParaPrestamo')) {
         return generarLinkWhatsApp($telefono, $texto);
     }
 }
-
 // FUNCIONES  PUBLICACIONES (comunidad)
-
 
 if (!function_exists('post_reacciones_validas')) {
     function post_reacciones_validas(): array
@@ -1660,7 +1658,6 @@ if (!function_exists('post_reacciones_vacias')) {
     }
 }
 
-
 if (!function_exists('post_error_response')) {
     function post_error_response(string $msg, int $status = 400): \Illuminate\Http\JsonResponse
     {
@@ -1680,7 +1677,6 @@ if (!function_exists('post_success_response')) {
         ], $extra), $status);
     }
 }
-
 
 if (!function_exists('post_validate_auth')) {
     function post_validate_auth(?\App\Models\User $user): ?\Illuminate\Http\JsonResponse
@@ -1715,12 +1711,9 @@ if (!function_exists('post_validate_ownership')) {
     }
 }
 
-//GRUPOS / PERMISOS
+// ---------- GRUPOS / PERMISOS ----------
 
 if (!function_exists('post_grupos_visibles_de')) {
-    /**
-     * Devuelve los IDs de grupos visibles para un usuario.
-     */
     function post_grupos_visibles_de(\App\Models\User $user): array
     {
         if (!$user->grupo_id) {
@@ -1732,9 +1725,6 @@ if (!function_exists('post_grupos_visibles_de')) {
 }
 
 if (!function_exists('post_usuario_puede_publicar_en')) {
-    /**
-     * Valida que el usuario pueda publicar en el grupo indicado.
-     */
     function post_usuario_puede_publicar_en(\App\Models\User $user, int $grupoId): bool
     {
         if (!$user->grupo_id) return false;
@@ -1744,7 +1734,6 @@ if (!function_exists('post_usuario_puede_publicar_en')) {
         return in_array($grupoId, $visibles, true);
     }
 }
-
 
 if (!function_exists('post_nombre_completo')) {
     function post_nombre_completo($user): string
@@ -1758,7 +1747,6 @@ if (!function_exists('post_nombre_completo')) {
 }
 
 if (!function_exists('post_nombre_publico')) {
-
     function post_nombre_publico($user, string $scope = 'group'): string
     {
         if ($scope === 'global') {
@@ -1772,9 +1760,6 @@ if (!function_exists('post_nombre_publico')) {
 // ---------- ARCHIVOS ----------
 
 if (!function_exists('post_guardar_archivo')) {
-    /**
-     * Guarda un archivo en `public/{$carpeta}`.
-     */
     function post_guardar_archivo($file, string $carpeta, string $baseName): string
     {
         $ext  = $file->getClientOriginalExtension() ?: 'bin';
@@ -1800,12 +1785,9 @@ if (!function_exists('post_guardar_archivo')) {
     }
 }
 
-//LINKS
+// ---------- LINKS ----------
 
 if (!function_exists('post_extraer_urls')) {
-    /**
-     * Extrae las URLs del texto de una publicación.
-     */
     function post_extraer_urls(string $texto): array
     {
         if (empty($texto)) return [];
@@ -1818,7 +1800,6 @@ if (!function_exists('post_extraer_urls')) {
 }
 
 if (!function_exists('post_detectar_tipo_link')) {
-
     function post_detectar_tipo_link(string $url): ?array
     {
         $dominios = [
@@ -1844,7 +1825,6 @@ if (!function_exists('post_detectar_tipo_link')) {
 }
 
 if (!function_exists('post_extraer_links_detectados')) {
-
     function post_extraer_links_detectados(?string $texto): array
     {
         return array_values(array_filter(
@@ -1856,12 +1836,9 @@ if (!function_exists('post_extraer_links_detectados')) {
     }
 }
 
-//REACCIONES
+// ---------- REACCIONES ----------
 
 if (!function_exists('post_contar_reacciones')) {
-    /**
-     * Cuenta las reacciones de un post.
-     */
     function post_contar_reacciones(\App\Models\Post $post, int $userId): array
     {
         $counts     = post_reacciones_vacias();
@@ -1880,12 +1857,12 @@ if (!function_exists('post_contar_reacciones')) {
     }
 }
 
-//FORMATEO
+// ---------- FORMATEO ----------
 
 if (!function_exists('post_formatear_comentario')) {
     function post_formatear_comentario($comment, string $scope = 'group'): array
     {
-        $autor       = $comment->user;  // ✅ ya viene cargado con with('user')
+        $autor       = $comment->user;
         $nombreAutor = post_nombre_publico($autor, $scope);
 
         return [
@@ -1901,7 +1878,6 @@ if (!function_exists('post_formatear_comentario')) {
 if (!function_exists('post_formatear')) {
     function post_formatear(\App\Models\Post $post, \App\Models\User $user_token, string $scope = 'group'): array
     {
-        // ✅ Si ya vienen cargados, usamos la colección en memoria (sin queries)
         if ($post->relationLoaded('comments')) {
             $comentarios = $post->comments
                 ->where('activo', 1)
@@ -1919,7 +1895,6 @@ if (!function_exists('post_formatear')) {
                 ->toArray();
         }
 
-        // ✅ Reacciones desde la colección en memoria si está cargada
         $counts     = post_reacciones_vacias();
         $miReaccion = null;
 
@@ -1933,7 +1908,7 @@ if (!function_exists('post_formatear')) {
                 }
             }
         } else {
-            $tmp = post_contar_reacciones($post, $user_token->id);
+            $tmp        = post_contar_reacciones($post, $user_token->id);
             $counts     = $tmp['counts'];
             $miReaccion = $tmp['mi_reaccion'];
         }
@@ -1946,7 +1921,6 @@ if (!function_exists('post_formatear')) {
                 'id'         => $autor->id,
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $autor->avatar_url ?? null,
-                // ↑ accessor, funciona porque 'avatar' viene en el with()
             ];
         } else {
             $user_data = [
@@ -1956,13 +1930,13 @@ if (!function_exists('post_formatear')) {
         }
 
         return [
-            'id'      => $post->id,
-            'user_id' => $scope === 'group' ? $post->user_id : null,
-            'post'    => $post->post,
-            'image'   => $post->image,
-            'video'   => $post->video,
-            'audio'   => $post->audio,
-            'user'    => $nombreAutor,
+            'id'          => $post->id,
+            'user_id'     => $scope === 'group' ? $post->user_id : null,
+            'post'        => $post->post,
+            'image'       => $post->image,
+            'video'       => $post->video,
+            'audio'       => $post->audio,
+            'user'        => $nombreAutor,
             'user_data'   => $user_data,
             'fecha'       => $post->created_at->format('d/m/Y'),
             'hora'        => $post->created_at->format('H:i'),
@@ -1975,9 +1949,6 @@ if (!function_exists('post_formatear')) {
 }
 
 if (!function_exists('post_formatear_nuevo')) {
-    /**
-     * Formatea un post recién creado.
-     */
     function post_formatear_nuevo(\App\Models\Post $post, \App\Models\User $user_token): array
     {
         $nombreAutor = post_nombre_completo($user_token);
@@ -1990,30 +1961,24 @@ if (!function_exists('post_formatear_nuevo')) {
             'video'   => $post->video,
             'audio'   => $post->audio,
             'user'    => $nombreAutor,
-
             'user_data' => [
                 'id'         => $user_token->id,
                 'nombre'     => $nombreAutor,
                 'avatar_url' => $user_token->avatar_url ?? null,
             ],
-
             'fecha'       => $post->created_at->format('d/m/Y'),
             'hora'        => $post->created_at->format('H:i'),
             'comentarios' => [],
             'reacciones'  => post_reacciones_vacias(),
             'mi_reaccion' => null,
-
-            'links' => post_extraer_links_detectados($post->post),
+            'links'       => post_extraer_links_detectados($post->post),
         ];
     }
 }
 
-//SUBIDA DE ARCHIVOS DEL POST
+// ---------- ARCHIVOS DE POST ----------
 
 if (!function_exists('post_procesar_archivos_request')) {
-    /**
-     * Procesa img/video/audio del request y los asigna al post.
-     */
     function post_procesar_archivos_request(\App\Models\Post $post, $request, int $userId): void
     {
         if ($request->hasFile('img')) {
@@ -2042,12 +2007,9 @@ if (!function_exists('post_procesar_archivos_request')) {
     }
 }
 
-// SCOPE
+// ---------- SCOPE ----------
 
 if (!function_exists('post_normalizar_scope')) {
-    /**
-     * Normaliza el scope recibido ('group' por defecto).
-     */
     function post_normalizar_scope(?string $scope): string
     {
         if (!in_array($scope, ['group', 'global'])) {
@@ -2058,25 +2020,31 @@ if (!function_exists('post_normalizar_scope')) {
     }
 }
 
-//NOTIFICACIONES
+// ---------- NOTIFICACIONES ----------
 
 if (!function_exists('post_notificar_miembros_grupo')) {
     /**
-     * Notifica a los miembros del grupo (excepto al autor) sobre un nuevo post.
+     * Notifica a los miembros del grupo (excepto al autor).
+     *
+     * ✅ Ahora usa chunkById + select('id') para NO cargar toda la tabla
+     *    en memoria y evitar timeouts en grupos grandes.
+     *
+     * Sigue siendo síncrona (no hay queue en el proyecto), pero optimizada.
      */
     function post_notificar_miembros_grupo(\App\Models\Post $post): void
     {
         \App\Models\User::where('grupo_id', $post->group_id)
             ->where('id', '!=', $post->user_id)
-            ->get()
-            ->each(function ($user) use ($post) {
-                $user->notify(new \App\Notifications\NewPostPublished($post));
+            ->select('id')
+            ->chunkById(100, function ($users) use ($post) {
+                foreach ($users as $user) {
+                    $user->notify(new \App\Notifications\NewPostPublished($post));
+                }
             });
     }
 }
 
-
-// FUNCIONES (comunidad) comentarios
+// ---------- FUNCIONES (comunidad) comentarios ----------
 
 if (!function_exists('comment_error_response')) {
     function comment_error_response(string $msg, int $status = 400): \Illuminate\Http\JsonResponse
@@ -2110,7 +2078,6 @@ if (!function_exists('comment_validate_auth')) {
         if (!$user) {
             return comment_error_response('Usuario no autenticado', 401);
         }
-
         return null;
     }
 }
@@ -2121,7 +2088,6 @@ if (!function_exists('comment_validate_post')) {
         if (!$post || !$post->activo) {
             return comment_error_response('Publicación no encontrada o inactiva', 404);
         }
-
         return null;
     }
 }
@@ -2145,7 +2111,6 @@ if (!function_exists('comment_validate_ownership')) {
         if ($user->id != $comment->user_id) {
             return comment_error_response('No autorizado', 403);
         }
-
         return null;
     }
 }
@@ -2181,6 +2146,3 @@ if (!function_exists('comment_log_error')) {
         \Log::error("[{$context}] Error", ['error' => $th->getMessage()]);
     }
 }
-
-
-
