@@ -2023,17 +2023,17 @@ if (!function_exists('post_normalizar_scope')) {
 // ---------- NOTIFICACIONES ----------
 
 if (!function_exists('post_notificar_miembros_grupo')) {
-
+    /**
+     * 🔧 FIX #7: ya NO recorre y notifica dentro del request de publicar.
+     *    Se encola un Job para que el POST /publication/save responda en ms.
+     */
     function post_notificar_miembros_grupo(\App\Models\Post $post): void
     {
-        \App\Models\User::where('grupo_id', $post->group_id)
-            ->where('id', '!=', $post->user_id)
-            ->select('id')
-            ->chunkById(100, function ($users) use ($post) {
-                foreach ($users as $user) {
-                    $user->notify(new \App\Notifications\NewPostPublished($post));
-                }
-            });
+        \App\Jobs\NotifyGroupNewPost::dispatch(
+            $post->id,
+            (int) $post->group_id,
+            (int) $post->user_id,
+        )->onQueue('notifications');
     }
 }
 
@@ -2123,7 +2123,7 @@ if (!function_exists('comment_format_payload')) {
     function comment_format_payload(\App\Models\Comment $comment, \App\Models\User $user): array
     {
         return [
-            'id'         => $comment->id,
+            'id'         => $comment->id,          // 🔧 FIX #9
             'nombre'     => comment_build_full_name($user),
             'comentario' => $comment->comment,
             'fecha'      => $comment->created_at->format('d/m/Y'),

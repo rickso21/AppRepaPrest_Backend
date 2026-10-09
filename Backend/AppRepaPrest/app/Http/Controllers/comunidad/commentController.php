@@ -34,14 +34,16 @@ class commentController extends Controller
 
             broadcast(new CommentCreated($comment))->toOthers();
 
+            // 🔧 FIX #9: la respuesta expone `data` con forma consistente:
+            //    { nombre, comentario, fecha, hora, avatar_url, id }
+            //    El frontend lee `data.comentario ?? data.data` y con esto
+            //    YA NO dispara un GET /publication completo por cada comentario.
             return comment_success_response(
                 'Comentario agregado',
                 comment_format_payload($comment, $user_token)
             );
-
         } catch (\Throwable $th) {
             comment_log_error('comment.store', $th);
-
             return comment_error_response('Error al guardar el comentario', 500);
         }
     }

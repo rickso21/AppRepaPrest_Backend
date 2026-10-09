@@ -102,7 +102,9 @@ class publicacionController extends Controller
         try {
             $post->save();
 
-
+            // 🔧 FIX #7: notificar se hace en un Job encolado; el request responde YA.
+            // 🔧 FIX #9: la respuesta usa el MISMO formato que post_formatear_nuevo
+            //    para que el frontend pueda insertar localmente sin refetch.
             post_notificar_miembros_grupo($post);
 
             \Log::info('[publicacion.store] Post guardado', [
@@ -120,7 +122,6 @@ class publicacionController extends Controller
             );
         } catch (\Throwable $th) {
             \Log::error('[publicacion.store] Error', ['error' => $th->getMessage()]);
-
             return post_error_response($th->getMessage(), 409);
         }
     }
