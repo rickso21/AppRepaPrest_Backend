@@ -24,14 +24,6 @@ class commentController extends Controller
             return $response;
         }
 
-        // 🔧 BACK-9 (SEGURIDAD): antes cualquier usuario autenticado podía comentar
-        //    en CUALQUIER publicación con solo conocer su id, aunque fuera de
-        //    otro grupo. Ahora se exige que el grupo de la publicación sea visible
-        //    para él (misma regla que ya usan publicar y reaccionar).
-        if (!post_usuario_puede_publicar_en($user_token, (int) $post->group_id)) {
-            return comment_error_response('Publicación no encontrada', 404);
-        }
-
         try {
             $comment = $post->comments()->create([
                 'user_id' => $user_token->id,
