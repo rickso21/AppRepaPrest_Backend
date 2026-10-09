@@ -2,18 +2,19 @@
 
 namespace App\Notifications;
 
-use Illuminate\Foundation\Queue\Queueable;
+use App\Models\Post;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 use NotificationChannels\Expo\ExpoMessage;
 
 class NewPostPublished extends Notification implements ShouldQueue
 {
-
-        use Queueable;
+    use Queueable;
 
     public function __construct(public $post) {}
 
-    public function via($notifiable)
+    public function via($notifiable): array
     {
         return ['expo'];
     }
