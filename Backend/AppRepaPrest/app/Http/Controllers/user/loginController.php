@@ -228,75 +228,71 @@ class loginController extends Controller
     // PERFIL DEL USUARIO
 
     public function edit_user(editUserRequest $request)
-{
-    $user_token = $request->user();
+    {
+        $user_token = $request->user();
 
-    if ($response = user_validate_auth($user_token)) {
-        return $response;
-    }
+        if ($response = user_validate_auth($user_token)) {
+            return $response;
+        }
 
-    try {
-        $user = User::findOrFail($user_token->id);
-    } catch (\Throwable $th) {
-        return user_error_response('Usuario no encontrado', 404);
-    }
+        try {
+            $user = User::findOrFail($user_token->id);
+        } catch (\Throwable $th) {
+            return user_error_response('Usuario no encontrado', 404);
+        }
 
-    try {
-        DB::beginTransaction();
+        try {
+            DB::beginTransaction();
 
-        user_actualizar_datos_basicos($user, $request);
+            user_actualizar_datos_basicos($user, $request);
 
-        // Validar email único si cambia
-        if ($request->filled('email') && $request->email !== $user->email) {
-            $exists = User::where('email', $request->email)
-                ->where('id', '!=', $user->id)
-                ->exists();
+            // Validar email único si cambia
+            if ($request->filled('email') && $request->email !== $user->email) {
+                $exists = User::where('email', $request->email)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
 
-            if ($exists) {
-                DB::rollBack();
-                return user_error_response('El correo ya está registrado por otro usuario', 409);
+                if ($exists) {
+                    DB::rollBack();
+                    return user_error_response('El correo ya está registrado por otro usuario', 409);
+                }
+
+                $user->email = $request->email;
             }
 
-            $user->email = $request->email;
+            if ($request->filled('password')) {
+                $user->password = Hash::make($request->password);
+            }
+
+            user_actualizar_archivos($user, $request);
+
+            $user->save();
+            DB::commit();
+
+            return response()->json([
+                'res'  => true,
+                'msg'  => 'Se editó el usuario con éxito',
+                'user' => [
+                    'id'              => $user->id,
+                    'nombre'          => $user->nombre,
+                    'nombre_completo' => user_nombre_completo($user),
+                    'apellido_p'      => $user->apellido_p,
+                    'apellido_m'      => $user->apellido_m,
+                    'email'           => $user->email,
+                    'telefono'        => $user->telefono,
+                    'ciudad'          => $user->ciudad,
+                    'avatar_url'      => $user->avatar_url,
+                    'portada_url'     => $user->portada_url,
+                ],
+            ], 200);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            Log::error('[edit_user] Error: ' . $th->getMessage());
+
+            return user_error_response('Error al editar el usuario: ' . $th->getMessage(), 409);
         }
-
-        if ($request->filled('password')) {
-            $user->password = Hash::make($request->password);
-        }
-
-        user_actualizar_archivos($user, $request);
-
-        $user->save();
-        DB::commit();
-
-        if ($user->grupo_id) {
-            \Cache::forget("grupo_show_{$user->grupo_id}");
-        }
-
-        return response()->json([
-            'res'  => true,
-            'msg'  => 'Se editó el usuario con éxito',
-            'user' => [
-                'id'              => $user->id,
-                'nombre'          => $user->nombre,
-                'nombre_completo' => user_nombre_completo($user),
-                'apellido_p'      => $user->apellido_p,
-                'apellido_m'      => $user->apellido_m,
-                'email'           => $user->email,
-                'telefono'        => $user->telefono,
-                'ciudad'          => $user->ciudad,
-                'avatar_url'      => $user->avatar_url,
-                'portada_url'     => $user->portada_url,
-            ],
-        ], 200);
-
-    } catch (\Throwable $th) {
-        DB::rollBack();
-        Log::error('[edit_user] Error: ' . $th->getMessage());
-
-        return user_error_response('Error al editar el usuario: ' . $th->getMessage(), 409);
     }
-}
 
     public function show_user(Request $request, $id)
     {
@@ -324,7 +320,6 @@ class loginController extends Controller
         ], 200);
     }
 
-    /*
     public function show_grupo(Request $request, $id)
     {
         $grupo = Grupo::with(['emergencia', 'monitoreo'])->find($id);
@@ -360,74 +355,6 @@ class loginController extends Controller
             ],
         ], 200);
     }
-        */
-    public function show_grupo(Request $request, $id)
-{
-    try {
-        // 🔥 Si piden un subgrupo, subimos al principal
-        $grupo = Grupo::find($id);
-        if (!$grupo) {
-            return user_error_response('Grupo no encontrado', 404);
-        }
-
-        if (!is_null($grupo->parent_id)) {
-            $id = $grupo->parent_id;   // 🔥 usar el ID del principal
-        }
-
-        // 🔥 Caché 5 min
-        $payload = \Cache::remember("grupo_show_{$id}", 300, function () use ($id) {
-
-            // 🔥 UNA query con eager loading
-            $grupo = Grupo::with([
-                'emergencia:id,group_name,parent_id,tipo_grupo,img_group',
-                'monitoreo:id,group_name,parent_id,tipo_grupo,img_group',
-                'lider:id,nombre,apellido_p,apellido_m,avatar,portada,email,telefono',
-            ])->find($id);
-
-            if (!$grupo) return null;
-
-            // 🔥 Admin: reutiliza el helper existente (ya maneja rol + líder)
-            $admin = user_admin_de_grupo($grupo);
-
-            return [
-                'id'         => $grupo->id,
-                'code'       => $grupo->code,
-                'group_name' => $grupo->group_name,
-                'status'     => $grupo->status,
-                'tipo_grupo' => $grupo->tipo_grupo,
-                'img_url'    => $grupo->img_url ?? null,   // 🔥 nombre correcto
-                'parent_id'  => $grupo->parent_id,
-                'admin'      => $admin ? [
-                    'id'          => (int) $admin->id,
-                    'nombre'      => user_nombre_completo($admin),
-                    'email'       => $admin->email,
-                    'telefono'    => $admin->telefono,
-                    'logo_url'    => $admin->avatar_url,       // alias
-                    'portada_url' => $admin->portada_url,
-                    'avatar_url'  => $admin->avatar_url,
-                ] : null,
-                'grupo_emergencia' => user_subgrupo_payload($grupo->emergencia),
-                'grupo_monitoreo'  => user_subgrupo_payload($grupo->monitoreo),
-            ];
-        });
-
-        if (!$payload) {
-            return user_error_response('Grupo no encontrado', 404);
-        }
-
-        return response()->json([
-            'res'   => true,
-            'grupo' => $payload,
-        ], 200);
-
-    } catch (\Throwable $th) {
-        \Log::error('[show_grupo] Error', [
-            'id'    => $id,
-            'error' => $th->getMessage(),
-        ]);
-        return user_error_response('Error al cargar el grupo', 500);
-    }
-}
 
     // GESTIÓN DE CUENTA
 
