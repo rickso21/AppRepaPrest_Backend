@@ -62,9 +62,7 @@ class publicacionController extends Controller
             'res'           => true,
             'grupo'         => optional($user_token->grupo)->group_name,
             'scope'         => $scope,
-            'img_grupo'     => $user_token->grupo
-                ? public_path('/img/group/' . $user_token->grupo->img_group)
-                : null,
+            'img_grupo' => $user_token->avatar_url,
             'publicaciones' => $publicaciones,
             'pagination'    => [
                 'current_page' => $posts->currentPage(),
