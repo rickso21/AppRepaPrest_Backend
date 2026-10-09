@@ -63,7 +63,8 @@ return [
                // PDO::MYSQL_ATTR_SSL_CA => storage_path('certs/isrgrootx.pem'), // Ruta al certificado
                 //PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
                 PDO::ATTR_EMULATE_PREPARES => true,
-                PDO::ATTR_TIMEOUT => 10,
+                PDO::ATTR_TIMEOUT => 60,
+		PDO::ATTR_PERSISTENT => false,  
             ]) : [],
         ],
 
