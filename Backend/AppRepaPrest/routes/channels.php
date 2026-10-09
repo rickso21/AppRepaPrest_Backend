@@ -5,12 +5,10 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
 Broadcast::channel('group.{groupId}', function (User $user, int $groupId) {
-    // ✅ 1. Si es su grupo exacto, permitir
     if ((int) $user->grupo_id === (int) $groupId) {
         return true;
     }
 
-    // ✅ 2. Si es un grupo visible para él (emergencia, monitoreo, etc.), permitir
     $gruposVisibles = \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
 
     $autorizado = in_array((int) $groupId, $gruposVisibles, true);

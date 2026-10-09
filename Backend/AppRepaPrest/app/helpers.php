@@ -1859,52 +1859,6 @@ if (!function_exists('post_contar_reacciones')) {
 
 // ---------- FORMATEO ----------
 
-// 🔧 BACK-1: reacciones de VARIAS publicaciones en 2 consultas (conteo por tipo
-//    y mi reacción), en lugar de cargar todas las filas de tbl_post_reactions.
-//    Devuelve [post_id => ['counts' => [...], 'mi_reaccion' => ?string]] con una
-//    entrada por CADA id recibido (así post_formatear nunca cae a consultas por post).
-if (!function_exists('post_reacciones_agregadas')) {
-    function post_reacciones_agregadas(array $postIds, int $userId): array
-    {
-        $resultado = [];
-        foreach ($postIds as $id) {
-            $resultado[$id] = [
-                'counts'      => post_reacciones_vacias(),
-                'mi_reaccion' => null,
-            ];
-        }
-
-        if (empty($postIds)) {
-            return $resultado;
-        }
-
-        $filas = \App\Models\PostReaction::query()
-            ->whereIn('post_id', $postIds)
-            ->selectRaw('post_id, type, COUNT(*) AS total')
-            ->groupBy('post_id', 'type')
-            ->get();
-
-        foreach ($filas as $fila) {
-            if (isset($resultado[$fila->post_id]['counts'][$fila->type])) {
-                $resultado[$fila->post_id]['counts'][$fila->type] = (int) $fila->total;
-            }
-        }
-
-        $mias = \App\Models\PostReaction::query()
-            ->whereIn('post_id', $postIds)
-            ->where('user_id', $userId)
-            ->pluck('type', 'post_id');
-
-        foreach ($mias as $postId => $type) {
-            if (isset($resultado[$postId])) {
-                $resultado[$postId]['mi_reaccion'] = $type;
-            }
-        }
-
-        return $resultado;
-    }
-}
-
 if (!function_exists('post_formatear_comentario')) {
     function post_formatear_comentario($comment, string $scope = 'group'): array
     {
@@ -1912,10 +1866,6 @@ if (!function_exists('post_formatear_comentario')) {
         $nombreAutor = post_nombre_publico($autor, $scope);
 
         return [
-            // 🔧 BACK-10: el listado no incluía el id del comentario, así la app
-            //    no podía distinguir comentarios (ni evitar duplicados al
-            //    combinar un refresco con uno agregado localmente).
-            'id'         => $comment->id,
             'nombre'     => $nombreAutor,
             'comentario' => $comment->comment,
             'fecha'      => $comment->created_at->format('d/m/Y'),
@@ -1926,12 +1876,8 @@ if (!function_exists('post_formatear_comentario')) {
 }
 
 if (!function_exists('post_formatear')) {
-    function post_formatear(
-        \App\Models\Post $post,
-        \App\Models\User $user_token,
-        string $scope = 'group',
-        ?array $reaccionInfo = null   // 🔧 BACK-1: resultado de post_reacciones_agregadas()
-    ): array {
+    function post_formatear(\App\Models\Post $post, \App\Models\User $user_token, string $scope = 'group'): array
+    {
         if ($post->relationLoaded('comments')) {
             $comentarios = $post->comments
                 ->where('activo', 1)
@@ -1952,11 +1898,7 @@ if (!function_exists('post_formatear')) {
         $counts     = post_reacciones_vacias();
         $miReaccion = null;
 
-        if ($reaccionInfo !== null) {
-            // 🔧 BACK-1: datos ya agregados (listado). Cero consultas por post.
-            $counts     = $reaccionInfo['counts'];
-            $miReaccion = $reaccionInfo['mi_reaccion'];
-        } elseif ($post->relationLoaded('reactions')) {
+        if ($post->relationLoaded('reactions')) {
             foreach ($post->reactions as $r) {
                 if (isset($counts[$r->type])) {
                     $counts[$r->type]++;
@@ -2084,17 +2026,7 @@ if (!function_exists('post_notificar_miembros_grupo')) {
 
     function post_notificar_miembros_grupo(\App\Models\Post $post): void
     {
-        // 🔧 BACK-11: los usuarios pertenecen al grupo PRINCIPAL (tbl_user.grupo_id),
-        //    no a emergencias/monitoreo. Con `where('grupo_id', $post->group_id)`
-        //    una publicación en EMERGENCIAS o MONITOREO no notificaba a NADIE
-        //    (en tu respaldo: posts en 19491 vs usuarios con grupo_id 99340).
-        $principalId = \App\Models\Grupo::canalPrincipalDe((int) $post->group_id);
-
-        if (!$principalId) {
-            return;
-        }
-
-        \App\Models\User::where('grupo_id', $principalId)
+        \App\Models\User::where('grupo_id', $post->group_id)
             ->where('id', '!=', $post->user_id)
             ->select('id')
             ->chunkById(100, function ($users) use ($post) {

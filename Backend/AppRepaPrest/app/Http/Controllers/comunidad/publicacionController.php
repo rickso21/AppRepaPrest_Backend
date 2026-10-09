@@ -25,13 +25,10 @@ class publicacionController extends Controller
 
         $scope = post_normalizar_scope($request->input('scope', 'group'));
 
-        // 🔧 BACK-1: ya NO se hace eager-load de `reactions`. Eso traía UNA FILA POR
-        //    CADA REACCIÓN de las 20 publicaciones y las contaba en PHP (crece con
-        //    los miembros del grupo). Ahora se calculan con 2 consultas agregadas
-        //    (post_reacciones_agregadas) sin importar cuántas reacciones haya.
         $query = Post::with([
                 'user',
                 'comments' => fn($q) => $q->where('activo', 1)->with('user'),
+                'reactions',
             ])
             ->where('activo', 1);
 
@@ -39,13 +36,7 @@ class publicacionController extends Controller
             $gruposVisibles = post_grupos_visibles_de($user_token);
             $grupoFiltro    = $request->input('group_id');
 
-            if ($grupoFiltro) {
-                // 🔧 BACK-2: antes, si el group_id NO era visible, se ignoraba en
-                //    silencio y se devolvía el feed de TODOS los grupos visibles
-                //    (principal + emergencias + monitoreo mezclados). Ahora se rechaza.
-                if (!in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-                    return post_error_response('No tienes acceso a ese grupo', 403);
-                }
+            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
                 $query->where('group_id', (int) $grupoFiltro);
             } else {
                 $query->whereIn('group_id', $gruposVisibles);
@@ -61,45 +52,25 @@ class publicacionController extends Controller
                 ->whereHas('user', fn($q) => $q->where('status_id', 1));
         }
 
-        // 🔧 BACK-3: per_page acotado (antes aceptaba per_page=100000 y devolvía
-        //    toda la tabla con comentarios) y orden ESTABLE: created_at puede
-        //    repetirse (posts del mismo segundo) y con paginación eso duplica u
-        //    omite publicaciones entre páginas; `id` desempata.
-        $perPage = max(1, min(50, (int) $request->input('per_page', 20)));
-        $posts   = $query
-            ->orderBy('created_at', 'desc')
-            ->orderBy('id', 'desc')
-            ->paginate($perPage);
+        $perPage = (int) $request->input('per_page', 20);
+        $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        $items      = $posts->items();
-        $reacciones = post_reacciones_agregadas(
-            collect($items)->pluck('id')->all(),
-            (int) $user_token->id
-        );
-
-        $publicaciones = collect($items)
-            ->map(fn($post) => post_formatear(
-                $post,
-                $user_token,
-                $scope,
-                $reacciones[$post->id] ?? null
-            ))
-            ->values();
+        $publicaciones = collect($posts->items())
+            ->map(fn($post) => post_formatear($post, $user_token, $scope));
 
         return response()->json([
             'res'           => true,
             'grupo'         => optional($user_token->grupo)->group_name,
             'scope'         => $scope,
-            // 🔧 BACK-4: se quitó `img_grupo`. Devolvía public_path() = la RUTA
-            //    DEL SERVIDOR en disco (/var/www/...), inútil para la app y una
-            //    fuga de información interna. La app no lo usa.
+            'img_grupo'     => $user_token->grupo
+                ? public_path('/img/group/' . $user_token->grupo->img_group)
+                : null,
             'publicaciones' => $publicaciones,
             'pagination'    => [
                 'current_page' => $posts->currentPage(),
                 'last_page'    => $posts->lastPage(),
                 'per_page'     => $posts->perPage(),
                 'total'        => $posts->total(),
-                'has_more'     => $posts->hasMorePages(),
             ],
         ], 200);
     }
@@ -131,18 +102,8 @@ class publicacionController extends Controller
         try {
             $post->save();
 
-            // 🔧 BACK-5: las notificaciones se envían DESPUÉS de responder.
-            //    Antes se notificaba a cada miembro (un INSERT/push por usuario)
-            //    DENTRO de la petición: publicar tardaba más cuanto más grande
-            //    fuera el grupo y, si una notificación fallaba, la publicación ya
-            //    guardada devolvía error 409 y la app la mostraba como fallida.
-            app()->terminating(function () use ($post) {
-                try {
-                    post_notificar_miembros_grupo($post);
-                } catch (\Throwable $e) {
-                    \Log::error('[publicacion.store] notificaciones', ['error' => $e->getMessage()]);
-                }
-            });
+
+            post_notificar_miembros_grupo($post);
 
             \Log::info('[publicacion.store] Post guardado', [
                 'id'    => $post->id,
@@ -160,9 +121,7 @@ class publicacionController extends Controller
         } catch (\Throwable $th) {
             \Log::error('[publicacion.store] Error', ['error' => $th->getMessage()]);
 
-            // 🔧 BACK-7: ya no se devuelve $th->getMessage() al cliente (podía
-            //    exponer SQL, rutas o nombres de tablas). Queda en el log.
-            return post_error_response('No se pudo guardar la publicación', 409);
+            return post_error_response($th->getMessage(), 409);
         }
     }
 
@@ -194,9 +153,7 @@ class publicacionController extends Controller
 
             return post_success_response('Publicación actualizada correctamente');
         } catch (\Throwable $th) {
-            \Log::error('[publicacion.update] Error', ['error' => $th->getMessage()]);
-
-            return post_error_response('No se pudo actualizar la publicación', 409);
+            return post_error_response($th->getMessage(), 409);
         }
     }
 
@@ -235,9 +192,7 @@ class publicacionController extends Controller
 
             return post_success_response('Publicación eliminada correctamente');
         } catch (\Throwable $th) {
-            \Log::error('[publicacion.destroy] Error', ['error' => $th->getMessage()]);
-
-            return post_error_response('No se pudo eliminar la publicación', 500);
+            return post_error_response($th->getMessage(), 500);
         }
     }
 
@@ -254,9 +209,7 @@ class publicacionController extends Controller
             'type' => 'required|in:' . implode(',', post_reacciones_validas()),
         ]);
 
-        // 🔧 BACK-8: solo publicaciones activas (antes se podía reaccionar a una
-        //    publicación ya eliminada si se conocía su id).
-        $post = Post::where('activo', 1)->find($id);
+        $post = Post::find($id);
 
         if (!$post || !post_usuario_puede_publicar_en($user, (int) $post->group_id)) {
             return post_error_response('No encontrado', 404);
