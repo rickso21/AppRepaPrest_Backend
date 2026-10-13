@@ -1,25 +1,39 @@
 <?php
 
+use App\Models\Grupo;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
-Broadcast::channel('group.{groupId}', function (User $user, int $groupId) {
-    if ((int) $user->grupo_id === (int) $groupId) {
+Broadcast::channel('group.{groupId}', function (User $user, $groupId) {
+    $grupoCanal = (int) $groupId;
+    $miGrupo    = (int) $user->grupo_id;
+
+    // 1) Es su propio grupo → autorizado
+    if ($miGrupo === $grupoCanal) {
         return true;
     }
 
-    $gruposVisibles = \App\Models\Grupo::gruposVisiblesDe((int) $user->grupo_id);
+    // 2) Es un grupo visible (emergencia / monitoreo)
+    try {
+        $gruposVisibles = Grupo::gruposVisiblesDe($miGrupo);
+        $autorizado = in_array($grupoCanal, $gruposVisibles, true);
 
-    $autorizado = in_array((int) $groupId, $gruposVisibles, true);
+        Log::info('[channels] verificación de canal', [
+            'user_id'         => $user->id,
+            'user_grupo_id'   => $miGrupo,
+            'grupo_canal'     => $grupoCanal,
+            'grupos_visibles' => $gruposVisibles,
+            'autorizado'      => $autorizado,
+        ]);
 
-    Log::info('[channels] verificación de canal', [
-        'user_id'          => $user->id,
-        'user_grupo_id'    => $user->grupo_id,
-        'grupo_canal'      => $groupId,
-        'grupos_visibles'  => $gruposVisibles,
-        'autorizado'       => $autorizado,
-    ]);
-
-    return $autorizado;
-}, ['guards' => ['sanctum']]);
+        return $autorizado;
+    } catch (\Throwable $e) {
+        Log::error('[channels] error verificando canal', [
+            'user_id' => $user->id,
+            'grupo'   => $grupoCanal,
+            'error'   => $e->getMessage(),
+        ]);
+        return false;
+    }
+});
