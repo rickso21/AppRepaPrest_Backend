@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Event;
 
 use App\Events\LoanApplicationCreated;
 use App\Listeners\SendWhatsAppLoanNotification;
+use App\Events\PostCreated;
+use App\Events\CommentCreated;
+use App\Listeners\NotificarNuevaPublicacion;
+use App\Listeners\NotificarNuevoComentario;
 
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
@@ -31,6 +35,16 @@ class EventServiceProvider extends ServiceProvider
         LoanApplicationCreated::class => [
             SendWhatsAppLoanNotification::class,
         ],
+
+          PostCreated::class => [
+            NotificarNuevaPublicacion::class,
+        ],
+
+        CommentCreated::class => [
+            NotificarNuevoComentario::class,
+        ],
+
+
 
         // OPCIONAL: PARA REGISTRAR INICIOS DE SESIÓN (LOGS)
         Login::class => [

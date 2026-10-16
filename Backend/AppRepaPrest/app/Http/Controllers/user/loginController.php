@@ -476,20 +476,37 @@ class loginController extends Controller
     // PUSH TOKENS
 
     public function savePushToken(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        if ($response = user_validate_auth($user)) {
-            return $response;
-        }
-
-        $request->validate([
-            'expo_push_token' => 'required|string|max:255',
-        ]);
-
-        $user->expo_push_token = $request->expo_push_token;
-        $user->save();
-
-        return user_success_response('Token guardado correctamente');
+    if ($response = user_validate_auth($user)) {
+        return $response;
     }
+
+    $request->validate([
+        'expo_push_token' => 'required|string|max:255',
+    ]);
+
+    $user->expo_push_token       = $request->expo_push_token;
+    $user->push_token_updated_at = now();
+    $user->save();
+
+    return user_success_response('Token guardado correctamente');
+}
+
+
+public function deletePushToken(Request $request)
+{
+    $user = $request->user();
+
+    if ($response = user_validate_auth($user)) {
+        return $response;
+    }
+
+    $user->expo_push_token       = null;
+    $user->push_token_updated_at = now();
+    $user->save();
+
+    return user_success_response('Token eliminado correctamente');
+}
 }

@@ -29,7 +29,8 @@ use Illuminate\Support\Facades\Log;
     'grupo_id',
     'en_llamada',
     'llamada_de',
-    'current_channel'
+    'current_channel',
+    'expo_push_token',
 ])]
 #[Hidden(['password', 'remember_token', 'token_pc'])]
 #[Table('tbl_user')]
@@ -45,6 +46,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'en_llamada' => 'boolean',
+             'push_token_updated_at'  => 'datetime',
         ];
     }
 

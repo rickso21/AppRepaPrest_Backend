@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::match(['post', 'put'], '/update', [loginController::class, 'edit_user']);
     Route::get('/user/{id}', [loginController::class, 'show_user']);
     Route::post('/user/push-token', [loginController::class, 'savePushToken']);
+    Route::delete('/user/push-token', [loginController::class, 'deletePushToken']);
 
     // solicita prestamo
     Route::get('/solicita-user', [prestamoController::class, 'solicitar_credito']);

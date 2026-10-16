@@ -9,18 +9,11 @@ use Illuminate\Support\Facades\Log;
 
 class PushNotificationService
 {
-    /**
-     * Endpoint oficial de Expo.
-     */
     protected const EXPO_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
+    protected const CHUNK_SIZE    = 100;
 
     /**
-     * Expo acepta máximo 100 mensajes por request.
-     */
-    protected const CHUNK_SIZE = 100;
-
-    /**
-     * Envía una notificación a un usuario específico.
+     * Envía a un usuario específico.
      */
     public function sendToUser(
         User $user,
@@ -29,15 +22,12 @@ class PushNotificationService
         array $data = [],
         ?string $sound = 'default'
     ): bool {
-        if (empty($user->expo_push_token)) {
-            return false;
-        }
-
+        if (empty($user->expo_push_token)) return false;
         return $this->sendToTokens([$user->expo_push_token], $title, $body, $data, $sound) > 0;
     }
 
     /**
-     * Envía a varios usuarios, excluyendo opcionalmente al actor.
+     * Envía a varios usuarios (opcionalmente excluyendo a uno).
      */
     public function sendToUsers(
         Collection|array $users,
@@ -54,15 +44,12 @@ class PushNotificationService
             ->values()
             ->all();
 
-        if (empty($tokens)) {
-            return 0;
-        }
-
+        if (empty($tokens)) return 0;
         return $this->sendToTokens($tokens, $title, $body, $data);
     }
 
     /**
-     * Envía a una lista cruda de tokens.
+     * Envía a una lista de tokens.
      */
     public function sendToTokens(
         array $tokens,
@@ -72,10 +59,7 @@ class PushNotificationService
         ?string $sound = 'default'
     ): int {
         $tokens = array_values(array_filter(array_unique($tokens)));
-
-        if (empty($tokens)) {
-            return 0;
-        }
+        if (empty($tokens)) return 0;
 
         $enviados = 0;
 
@@ -97,7 +81,7 @@ class PushNotificationService
                 ])->post(self::EXPO_ENDPOINT, $messages);
 
                 if ($response->failed()) {
-                    Log::warning('[push] Expo respondió con error', [
+                    Log::warning('[push] Expo error', [
                         'status' => $response->status(),
                         'body'   => $response->body(),
                     ]);
@@ -107,7 +91,7 @@ class PushNotificationService
                 $this->cleanInvalidTokens($response->json('data') ?? [], $chunk);
                 $enviados += count($chunk);
             } catch (\Throwable $e) {
-                Log::error('[push] Error enviando a Expo: ' . $e->getMessage());
+                Log::error('[push] Error: ' . $e->getMessage());
             }
         }
 
@@ -115,7 +99,7 @@ class PushNotificationService
     }
 
     /**
-     * Limpia tokens inválidos (DeviceNotRegistered).
+     * Limpia tokens inválidos.
      */
     protected function cleanInvalidTokens(array $results, array $tokens): void
     {
