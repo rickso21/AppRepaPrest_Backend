@@ -9,7 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-class NotificarNuevaPublicacion implements ShouldQueue
+class NotificarNuevaPublicacion
 {
     // ⚡ Se ejecuta en background, no bloquea el request
     public string $queue = 'notifications';

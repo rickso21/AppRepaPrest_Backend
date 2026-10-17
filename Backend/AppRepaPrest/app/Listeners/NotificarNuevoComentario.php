@@ -7,7 +7,7 @@ use App\Services\PushNotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 
-class NotificarNuevoComentario implements ShouldQueue
+class NotificarNuevoComentario
 {
     public string $queue = 'notifications';
 
