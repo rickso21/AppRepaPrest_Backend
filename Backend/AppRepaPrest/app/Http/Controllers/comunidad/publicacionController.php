@@ -112,8 +112,10 @@ class publicacionController extends Controller
                 'audio' => $post->audio,
             ]);
 
+            // event() dispara listeners locales (push)
+            event(new PostCreated($post));
+            // notifica por WebSocket a otros usuarios
             broadcast(new PostCreated($post))->toOthers();
-
             return post_success_response(
                 'Publicación guardada correctamente',
                 ['data' => post_formatear_nuevo($post, $user_token)]
