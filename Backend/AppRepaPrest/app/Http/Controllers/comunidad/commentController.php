@@ -32,10 +32,8 @@ class commentController extends Controller
                 'activo'  => 1,
             ]);
 
-            // event() dispara listeners locales (push)
-            event(new CommentCreated($comment));
-            // broadcast() notifica por WebSocket a otros usuarios
             broadcast(new CommentCreated($comment))->toOthers();
+
             // 🔧 FIX #9: la respuesta expone `data` con forma consistente:
             //    { nombre, comentario, fecha, hora, avatar_url, id }
             //    El frontend lee `data.comentario ?? data.data` y con esto
