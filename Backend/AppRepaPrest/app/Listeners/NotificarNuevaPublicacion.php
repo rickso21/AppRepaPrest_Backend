@@ -47,7 +47,7 @@ class NotificarNuevaPublicacion
 
              $enviados = $this->push->sendToUsers(
                 users: $destinatarios,
-                title: 'Delivery Sobre Ruedas', // Título principal
+                title: 'Nueva Notificacion', // Título principal
                 body:  "📢 Nueva publicación\n" . $autor->full_name . ': ' . Str::limit($post->post ?? 'Adjunto', 50),
                 data:  [
                     'screen' => 'Comunidad',

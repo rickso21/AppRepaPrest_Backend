@@ -37,7 +37,7 @@ class NotificarNuevoComentario
             // CAMBIO AQUÍ: Título fijo y contenido en el body
             $enviado = $this->push->sendToUser(
                 user:  $postAutor,
-                title: 'Delivery Sobre Ruedas', // Título principal
+                title: 'Nueva Notificacion', // Título principal
                 body:  "💬 Nuevo comentario\n" . $autor->full_name . ' comentó tu publicación',
                 data:  [
                     'screen' => 'Comunidad',
