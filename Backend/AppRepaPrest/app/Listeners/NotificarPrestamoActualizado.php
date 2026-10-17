@@ -24,19 +24,21 @@ class NotificarPrestamoActualizado
 
             $title = 'Delivery Sobre Ruedas';
             $body = '';
-            $screen = 'Home'; // Pantalla por defecto
+            $screen = 'SolicitudPrestamo'; // Por defecto
 
             // Evaluamos el nuevo estado
             switch ($event->estadoNuevo) {
                 case 2: // Aprobado
                     $body = "✅ ¡Buenas noticias! Tu préstamo por $" . number_format($prestamo->monto_solicitado, 0) . " ha sido APROBADO.";
-                    $screen = 'SolicitudPrestamo';
+                    $screen = 'PrestamoActivo';
                     break;
                 case 4: // Pagado
                     $body = "🎉 ¡Felicidades! Has liquidado tu préstamo. Tu línea de crédito ha sido reactivada.";
+                    $screen = 'PrestamoPagado'; // 👈 Cambiado para que el frontend lo maneje
                     break;
                 case 5: // Rechazado
                     $body = "❌ Tu solicitud de préstamo ha sido rechazada. Motivo: " . ($prestamo->motivo_rechazo ?? 'No especificado');
+                    $screen = 'PrestamoRechazado'; // 👈 Cambiado para que el frontend lo maneje
                     break;
                 default:
                     return; // Si es otro estado, no notificamos

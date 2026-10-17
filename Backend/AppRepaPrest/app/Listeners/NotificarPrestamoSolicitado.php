@@ -4,7 +4,7 @@ namespace App\Listeners;
 
 use App\Events\PrestamoSolicitado;
 use App\Services\PushNotificationService;
-use App\Models\User; // ✅ Necesitamos el modelo User
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 class NotificarPrestamoSolicitado
@@ -21,25 +21,25 @@ class NotificarPrestamoSolicitado
 
             if (!$usuarioSolicitante) return;
 
-            // 🔍 BUSCAR A LOS ASESORES DEL GRUPO
-            $asesores = User::where('grupo_id', $usuarioSolicitante->grupo_id)
-                ->whereIn('rol_id', [3, 5]) // Rol 3 = Asesor, 5 = Admin
-                ->where('status_id', 1)
+            // 🔍 BUSCAR A LOS ASESORES Y ADMINS A NIVEL GLOBAL
+            // Buscamos cualquier usuario cuyo rol sea super admin (3) o Asesor (5)
+            $asesores = User::whereIn('rol_id', [3, 5]) // 3=super admin, 5=Asesor
+                ->where('status_id', 1) // Activos
                 ->whereNotNull('expo_push_token')
+                ->where('expo_push_token', '!=', '')
                 ->get();
 
             if ($asesores->isEmpty()) {
-                Log::info('[push.prestamo] No se encontraron asesores para notificar', ['grupo_id' => $usuarioSolicitante->grupo_id]);
+                Log::info('[push.prestamo] No se encontraron asesores con token registrado');
                 return;
             }
 
-            // Notificar a todos los asesores encontrados
             $this->push->sendToUsers(
                 users: $asesores,
                 title: 'Delivery Sobre Ruedas',
                 body: "🔔 Nueva solicitud de préstamo de " . $usuarioSolicitante->full_name . " por $" . number_format($prestamo->monto_solicitado, 0),
                 data: [
-                    'screen' => 'SolicitudPrestamo',
+                    'screen' => 'PanelAsesor',
                     'prestamoId' => $prestamo->id,
                 ]
             );
