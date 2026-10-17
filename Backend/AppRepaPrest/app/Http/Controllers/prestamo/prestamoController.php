@@ -358,6 +358,7 @@ class prestamoController extends Controller
             $prestamo->estado_prestamo_id  = 1;
             $prestamo->incremento_aplicado = 0;
             $prestamo->save();
+             event(new \App\Events\PrestamoSolicitado($prestamo));
 
             $linea_credito->estatus_id = 2;
             $linea_credito->save();

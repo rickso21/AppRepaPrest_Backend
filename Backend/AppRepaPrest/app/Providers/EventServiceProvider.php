@@ -44,6 +44,13 @@ class EventServiceProvider extends ServiceProvider
             NotificarNuevoComentario::class,
         ],
 
+         PrestamoSolicitado::class => [
+            NotificarPrestamoSolicitado::class,
+        ],
+        PrestamoActualizado::class => [
+            NotificarPrestamoActualizado::class,
+        ],
+
 
 
         // OPCIONAL: PARA REGISTRAR INICIOS DE SESIÓN (LOGS)

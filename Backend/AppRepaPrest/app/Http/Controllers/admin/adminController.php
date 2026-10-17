@@ -336,7 +336,7 @@ class adminController extends Controller
             // GUARDAR CAMBIOS
             // ============================================
             $prestamo->save();
-
+             event(new \App\Events\PrestamoActualizado($prestamo, $estado_actual, $nuevo_estado));
             // ============================================
             // PREPARAR RESPUESTA
             // ============================================
