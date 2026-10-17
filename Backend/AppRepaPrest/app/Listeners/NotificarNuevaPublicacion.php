@@ -45,16 +45,18 @@ class NotificarNuevaPublicacion
 
             if ($destinatarios->isEmpty()) return;
 
-            $enviados = $this->push->sendToUsers(
+             $enviados = $this->push->sendToUsers(
                 users: $destinatarios,
-                title: '📢 Nueva publicación',
-                body:  $autor->full_name . ': ' . Str::limit($post->post ?? 'Nueva publicación', 60),
+                title: 'Delivery Sobre Ruedas', // Título principal
+                body:  $autor->full_name . ': ' . Str::limit($post->post ?? 'Nueva publicación', 60), // Contenido abajo
                 data:  [
                     'screen' => 'Comunidad',
                     'postId' => $post->id,
                 ],
                 excludeUserId: $autor->id
             );
+
+
 
             Log::info('[push.publicacion] Enviado', [
                 'post_id'  => $post->id,

@@ -34,15 +34,17 @@ class NotificarNuevoComentario
             if ($postAutor->id === $autor->id) return;      // No auto-notificar
             if (empty($postAutor->expo_push_token)) return; // Sin token
 
+            // CAMBIO AQUÍ: Título fijo y contenido en el body
             $enviado = $this->push->sendToUser(
                 user:  $postAutor,
-                title: '💬 Nuevo comentario',
-                body:  $autor->full_name . ' comentó tu publicación',
+                title: 'Delivery Sobre Ruedas', // Título principal
+                body:  $autor->full_name . ' comentó tu publicación', // Contenido abajo
                 data:  [
                     'screen' => 'Comunidad',
                     'postId' => $post->id,
                 ]
             );
+
 
             Log::info('[push.comment] Enviado', [
                 'post_id'  => $post->id,
