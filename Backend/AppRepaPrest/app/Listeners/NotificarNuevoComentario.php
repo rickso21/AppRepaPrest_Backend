@@ -38,7 +38,7 @@ class NotificarNuevoComentario
             $enviado = $this->push->sendToUser(
                 user:  $postAutor,
                 title: 'Delivery Sobre Ruedas', // Título principal
-                body:  $autor->full_name . ' comentó tu publicación', // Contenido abajo
+                body:  "💬 Nuevo comentario\n" . $autor->full_name . ' comentó tu publicación',
                 data:  [
                     'screen' => 'Comunidad',
                     'postId' => $post->id,
