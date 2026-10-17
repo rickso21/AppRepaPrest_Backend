@@ -3,12 +3,14 @@
 namespace App\Listeners;
 
 use App\Events\PrestamoActualizado;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
+use App\Services\PushNotificationService;
+use Illuminate\Support\Facades\Log;
 
 class NotificarPrestamoActualizado
 {
-      public function __construct(
+    // Se ejecuta sincrónicamente (sin ShouldQueue)
+
+    public function __construct(
         protected PushNotificationService $push
     ) {}
 

@@ -3,12 +3,14 @@
 namespace App\Listeners;
 
 use App\Events\PrestamoSolicitado;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
+use App\Services\PushNotificationService;
+use Illuminate\Support\Facades\Log;
 
 class NotificarPrestamoSolicitado
 {
-   public function __construct(
+    // Se ejecuta sincrónicamente (sin ShouldQueue)
+
+    public function __construct(
         protected PushNotificationService $push
     ) {}
 
@@ -16,7 +18,7 @@ class NotificarPrestamoSolicitado
     {
         try {
             $prestamo = $event->prestamo;
-            $usuario = $prestamo->usuario; // Asumiendo que tienes esta relación en el modelo Prestamo
+            $usuario = $prestamo->usuario; // Requiere relación 'usuario' en el modelo Prestamo
 
             if (!$usuario || empty($usuario->expo_push_token)) return;
 
