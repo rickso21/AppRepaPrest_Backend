@@ -38,7 +38,7 @@ class NotificarNuevoComentario
             $enviado = $this->push->sendToUser(
                 user:  $postAutor,
                 title: 'Nueva Notificacion', // Título principal
-                body:  "💬 Nuevo comentario\n" . $autor->full_name . ' comentó tu publicación',
+                body:  "💬 Un miembro ha comentado\n" . $autor->full_name . ' comentó tu publicación',
                 data:  [
                     'screen' => 'Comunidad',
                     'postId' => $post->id,
