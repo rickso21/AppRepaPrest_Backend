@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\Log;
 
 class NotificarPrestamoActualizado
 {
-    // Se ejecuta sincrónicamente (sin ShouldQueue)
-
     public function __construct(
         protected PushNotificationService $push
     ) {}
@@ -18,19 +16,21 @@ class NotificarPrestamoActualizado
     {
         try {
             $prestamo = $event->prestamo;
-            $usuario = $prestamo->usuario;
 
-            if (!$usuario || empty($usuario->expo_push_token)) return;
+            // 🎯 El destinatario es el dueño del préstamo (el usuario)
+            $usuarioDestino = $prestamo->usuario;
+
+            if (!$usuarioDestino || empty($usuarioDestino->expo_push_token)) return;
 
             $title = 'Delivery Sobre Ruedas';
             $body = '';
-            $screen = 'SolicitudPrestamo';
+            $screen = 'Home'; // Pantalla por defecto
 
             // Evaluamos el nuevo estado
             switch ($event->estadoNuevo) {
                 case 2: // Aprobado
                     $body = "✅ ¡Buenas noticias! Tu préstamo por $" . number_format($prestamo->monto_solicitado, 0) . " ha sido APROBADO.";
-                    $screen = 'PrestamoActivo'; // O la pantalla correspondiente
+                    $screen = 'SolicitudPrestamo';
                     break;
                 case 4: // Pagado
                     $body = "🎉 ¡Felicidades! Has liquidado tu préstamo. Tu línea de crédito ha sido reactivada.";
@@ -43,7 +43,7 @@ class NotificarPrestamoActualizado
             }
 
             $this->push->sendToUser(
-                user: $usuario,
+                user: $usuarioDestino,
                 title: $title,
                 body: $body,
                 data: [
@@ -52,10 +52,12 @@ class NotificarPrestamoActualizado
                 ]
             );
 
-            Log::info('[push.prestamo] Estado actualizado notificado', [
+            Log::info('[push.prestamo] Estado actualizado notificado al usuario', [
                 'prestamo_id' => $prestamo->id,
+                'usuario_id' => $usuarioDestino->id,
                 'nuevo_estado' => $event->estadoNuevo
             ]);
+
         } catch (\Throwable $e) {
             Log::error('[push.prestamo] Error actualizado: ' . $e->getMessage());
         }
