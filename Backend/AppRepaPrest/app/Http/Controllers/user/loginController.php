@@ -475,7 +475,7 @@ class loginController extends Controller
 
     // PUSH TOKENS
 
-    public function savePushToken(Request $request)
+   public function savePushToken(Request $request)
 {
     $user = $request->user();
 
@@ -487,13 +487,33 @@ class loginController extends Controller
         'expo_push_token' => 'required|string|max:255',
     ]);
 
-    $user->expo_push_token       = $request->expo_push_token;
+    $token = $request->expo_push_token;
+
+    // Limpiar este token de CUALQUIER OTRO usuario
+    //    (el token es del dispositivo, no de la cuenta).
+    //    Sin esto, si Juan cierra sesión sin red y María inicia sesión
+    //    en el mismo dispositivo, ambas filas tendrán el mismo token
+    //    y las push se duplicarán.
+    $cleaned = User::where('expo_push_token', $token)
+        ->where('id', '!=', $user->id)
+        ->update([
+            'expo_push_token'       => null,
+            'push_token_updated_at' => now(),
+        ]);
+
+    // Asignar el token al usuario actual
+    $user->expo_push_token       = $token;
     $user->push_token_updated_at = now();
     $user->save();
 
+    Log::info('[push-token] registrado', [
+        'user_id'         => $user->id,
+        'token'           => $token,
+        'otros_limpiados' => $cleaned,
+    ]);
+
     return user_success_response('Token guardado correctamente');
 }
-
 
 public function deletePushToken(Request $request)
 {
@@ -503,9 +523,37 @@ public function deletePushToken(Request $request)
         return $response;
     }
 
-    $user->expo_push_token       = null;
-    $user->push_token_updated_at = now();
-    $user->save();
+    $token = $request->input('expo_push_token');
+
+    Log::info('[push-token] delete solicitado', [
+        'user_id' => $user->id,
+        'token'   => $token,
+    ]);
+
+    if ($token) {
+
+        //    El token es del dispositivo: si el usuario cerró sesión,
+        //    ya no debe estar asociado a nadie.
+        $affected = User::where('expo_push_token', $token)
+            ->update([
+                'expo_push_token'       => null,
+                'push_token_updated_at' => now(),
+            ]);
+
+        Log::info("[push-token] filas actualizadas: {$affected}");
+
+        if ($affected === 0) {
+            Log::warning('[push-token] ⚠️ El token NO existía en la BD', [
+                'token' => $token,
+            ]);
+        }
+    } else {
+        // Fallback: solo borra el token del usuario autenticado
+        $user->expo_push_token       = null;
+        $user->push_token_updated_at = now();
+        $user->save();
+        Log::info('[push-token] token del user actual limpiado (sin body)');
+    }
 
     return user_success_response('Token eliminado correctamente');
 }
