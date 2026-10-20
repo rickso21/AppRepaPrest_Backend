@@ -112,8 +112,7 @@ class publicacionController extends Controller
                 'audio' => $post->audio,
             ]);
 
-           event(new PostCreated($post));
-broadcast(new PostCreated($post));
+            broadcast(new PostCreated($post));
             return post_success_response(
                 'Publicación guardada correctamente',
                 ['data' => post_formatear_nuevo($post, $user_token)]
