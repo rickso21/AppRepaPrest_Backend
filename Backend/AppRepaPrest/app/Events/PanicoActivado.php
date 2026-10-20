@@ -2,48 +2,40 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Foundation\Events\Dispatchable;
 
-class PanicoActivado implements ShouldBroadcast
+// ShouldBroadcastNow = sale directo a Reverb, sin depender de un queue worker.
+// Canal PRIVADO por grupo: solo lo reciben los miembros del grupo.
+class PanicoActivado implements ShouldBroadcastNow
 {
-    public $userId;
-    public $userName;
-    public $latitud;
-    public $longitud;
-    public $tipoEmergencia;
-    public $alertaId;
+    use Dispatchable, InteractsWithSockets;
 
-    public function __construct($userId, $userName, $latitud, $longitud, $tipoEmergencia, $alertaId)
+    public function __construct(
+        public int $grupoId, public int $userId, public string $nombre,
+        public float $latitud, public float $longitud,
+        public string $tipoEmergencia, public int $alertaId,
+    ) {}
+
+    public function broadcastOn(): array
     {
-        $this->userId = $userId;
-        $this->userName = $userName;
-        $this->latitud = $latitud;
-        $this->longitud = $longitud;
-        $this->tipoEmergencia = $tipoEmergencia;
-        $this->alertaId = $alertaId;
+        return [new PrivateChannel('grupo.' . $this->grupoId)];
     }
 
-    public function broadcastOn()
-    {
-        return new Channel('mapa');
-    }
-
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return 'panico.activado';
     }
 
-    public function broadcastWith()
+    public function broadcastWith(): array
     {
         return [
-            'userId' => $this->userId,
-            'userName' => $this->userName,
-            'latitud' => $this->latitud,
-            'longitud' => $this->longitud,
-            'tipoEmergencia' => $this->tipoEmergencia,
-            'alertaId' => $this->alertaId,
-            'timestamp' => now()->toISOString()
+            'id' => $this->userId, 'nombre' => $this->nombre,
+            'latitud' => $this->latitud, 'longitud' => $this->longitud,
+            'tipoEmergencia' => $this->tipoEmergencia, 'alertaId' => $this->alertaId,
+            'hora' => now()->toISOString(),
         ];
     }
 }

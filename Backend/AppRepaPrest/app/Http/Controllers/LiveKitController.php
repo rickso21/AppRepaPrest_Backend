@@ -2,84 +2,45 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use Agence104\LiveKit\AccessToken;
 use Agence104\LiveKit\AccessTokenOptions;
 use Agence104\LiveKit\VideoGrant;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
+/**
+ * Walkie-talkie: LiveKit ya es WebSocket/WebRTC, no necesita Reverb.
+ * composer require agence104/livekit-server-sdk
+ * .env: LIVEKIT_URL=wss://xxxx.livekit.cloud  LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...
+ *
+ * NOTA: este archivo NO venía en tu zip; es una versión base. Si ya tenías uno,
+ * conserva el tuyo y solo asegúrate de que la sala sea por grupo ("grupo-{id}").
+ */
 class LiveKitController extends Controller
 {
     public function Get_Token(Request $request)
     {
-        try {
-            $user = $request->user();
-
-            if (!$user) {
-                return response()->json([
-                    'res' => false,
-                    'msg' => 'Usuario no autenticado'
-                ], 401);
-            }
-
-            // Sala por grupo: todos los repartidores del mismo grupo se escuchan entre sí.
-            // Si el usuario no tiene grupo_id, se usa una sala personal.
-            $roomName = $user->grupo_id
-                ? "grupo-{$user->grupo_id}"
-                : "repartidor-{$user->id}";
-
-            // Nombre visible: nombre + apellido_p, igual que en MapaController
-            $displayName = trim(
-                ($user->nombre ?? '') . ' ' . ($user->apellido_p ?? '')
-            ) ?: "Usuario {$user->id}";
-
-            $tokenOptions = (new AccessTokenOptions())
-                ->setIdentity((string) $user->id)
-                ->setName($displayName);
-
-            $videoGrant = (new VideoGrant())
-                ->setRoomJoin()
-                ->setRoomName($roomName)
-                ->setCanPublish(true)
-                ->setCanSubscribe(true);
-
-            $token = (new AccessToken(
-                config('services.livekit.key'),
-                config('services.livekit.secret')
-            ))
-                ->init($tokenOptions)
-                ->setGrant($videoGrant)
-                ->toJwt();
-
-            Log::info('LiveKit token generado:', [
-                'usuario_id' => $user->id,
-                'grupo_id' => $user->grupo_id,
-                'room' => $roomName,
-            ]);
-
-            return response()->json([
-                'res' => true,
-                'msg' => 'Token generado',
-                'data' => [
-                    'token' => $token,
-                    'url' => config('services.livekit.url'),
-                    'room' => $roomName,
-                    'identity' => (string) $user->id,
-                    'name' => $displayName,
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error generando token LiveKit:', [
-                'mensaje' => $e->getMessage(),
-                'linea' => $e->getLine(),
-            ]);
-
-            return response()->json([
-                'res' => false,
-                'msg' => 'Error al generar token: ' . $e->getMessage(),
-            ], 500);
+        $user = $request->user();
+        if (!$user->grupo_id) {
+            return response()->json(['res' => false, 'msg' => 'Usuario sin grupo'], 403);
         }
+
+        $opts = (new AccessTokenOptions())
+            ->setIdentity((string) $user->id)
+            ->setName(trim($user->nombre . ' ' . ($user->apellido_p ?? '')))
+            ->setTtl(3600);
+
+        $grant = (new VideoGrant())
+            ->setRoomJoin()
+            ->setRoomName('grupo-' . $user->grupo_id)   // una sala por grupo
+            ->setCanPublish(true)
+            ->setCanSubscribe(true);
+
+        $jwt = (new AccessToken(config('services.livekit.key'), config('services.livekit.secret')))
+            ->init($opts)->setGrant($grant)->toJwt();
+
+        return response()->json([
+            'res'  => true,
+            'data' => ['token' => $jwt, 'url' => config('services.livekit.url')],
+        ]);
     }
 }

@@ -2,38 +2,38 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
-use Illuminate\Queue\SerializesModels;
 
-class UbicacionActualizada implements ShouldBroadcast
+// ShouldBroadcastNow = sale directo a Reverb, sin depender de un queue worker.
+// Canal PRIVADO por grupo: solo lo reciben los miembros del grupo.
+class UbicacionActualizada implements ShouldBroadcastNow
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets;
 
-    public $userId;
-    public $userName;
-    public $latitud;
-    public $longitud;
-    public $estado;
+    public function __construct(
+        public int $grupoId, public int $userId, public string $nombre,
+        public float $latitud, public float $longitud, public string $estado = 'conectado',
+    ) {}
 
-    public function __construct($userId, $userName, $latitud, $longitud, $estado)
+    public function broadcastOn(): array
     {
-        $this->userId = $userId;
-        $this->userName = $userName;
-        $this->latitud = $latitud;
-        $this->longitud = $longitud;
-        $this->estado = $estado;
+        return [new PrivateChannel('grupo.' . $this->grupoId)];
     }
 
-    public function broadcastOn()
-    {
-        return new Channel('mapa');
-    }
-
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return 'ubicacion.actualizada';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'id' => $this->userId, 'nombre' => $this->nombre,
+            'latitud' => $this->latitud, 'longitud' => $this->longitud,
+            'estado' => $this->estado, 'hora' => now()->toISOString(),
+        ];
     }
 }

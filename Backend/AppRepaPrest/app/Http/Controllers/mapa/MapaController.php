@@ -10,7 +10,11 @@ use App\Models\AlertaPanico;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-
+use App\Events\UbicacionActualizada;
+use App\Events\EstadoCambiado;
+use App\Events\PanicoActivado;
+use App\Events\PanicoDesactivado;
+ use Illuminate\Support\Facades\Cache;
 class MapaController extends Controller
 {
 public function Current_location(Request $request)
@@ -43,6 +47,18 @@ public function Current_location(Request $request)
 
         // Obtener el estado actual del usuario para la respuesta
         $estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
+
+        // WebSocket: avisa a los miembros del grupo (reemplaza el polling de GET /mapa/repartidores)
+        if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
+
+
+
+        $this->emitir(new UbicacionActualizada(
+                (int) $user->grupo_id, (int) $user->id,
+                trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
+                (float) $request->latitud, (float) $request->longitud, 'conectado'
+            ));
+        }
 
         return response()->json([
             'res' => true,
@@ -152,9 +168,10 @@ public function Current_location(Request $request)
 }
 
 
-public function Specific_user($id)
+public function Specific_user(Request $request, $id)
 {
     try {
+        $user = $request->user();
          $repartidor = DB::table('tbl_user as u')
         ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
         ->leftJoin('tbl_ubicaciones as ub', function($join) {
@@ -164,7 +181,7 @@ public function Specific_user($id)
         ->where('u.id', '=', $id)
         ->where('u.status_id', 1)
         ->where('u.grupo_id', $user->grupo_id)
-        ->select(...)
+        ->select('u.id','u.nombre','u.apellido_p','u.telefono','ub.latitud','ub.longitud','er.estado as estado_repartidor')
         ->first();
 
     if (!$repartidor) {
@@ -241,6 +258,10 @@ public function UserStatus(Request $request)
             ]);
         }
 
+        if ($user->grupo_id) {
+            $this->emitir(new EstadoCambiado((int) $user->grupo_id, (int) $user->id, $estadoDB));
+        }
+
         return response()->json([
             'res' => true,
             'msg' => "Estado cambiado a {$request->estado}",
@@ -303,6 +324,15 @@ public function UserStatus(Request $request)
                 'alerta_id' => $alerta->id
             ]);
 
+            if ($user->grupo_id) {
+                $this->emitir(new PanicoActivado(
+                    (int) $user->grupo_id, (int) $user->id,
+                    trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
+                    (float) $request->latitud, (float) $request->longitud,
+                    $request->tipo_emergencia, (int) $alerta->id
+                ));
+            }
+
             return response()->json([
                 'res' => true,
                 'msg' => 'Alerta de pánico activada',
@@ -341,6 +371,10 @@ public function UserStatus(Request $request)
                 'alerta_id' => $alerta->id
             ]);
 
+            if ($user->grupo_id) {
+                $this->emitir(new PanicoDesactivado((int) $user->grupo_id, (int) $user->id, (int) $alerta->id));
+            }
+
             return response()->json([
                 'res' => true,
                 'msg' => 'Alerta de pánico desactivada',
@@ -360,5 +394,23 @@ public function UserStatus(Request $request)
         ], 500);
     }
 }
+
+    /**
+     * Emite un evento por WebSocket sin poder romper la operación principal:
+     * si Reverb está caído, el pánico / ubicación igual se guardan en BD.
+     */
+    private function emitir($event): void
+    {
+        try {
+            if (!($event instanceof UbicacionActualizada)) {
+                Log::info('Broadcast ' . class_basename($event), [
+                    'driver' => config('broadcasting.default'),
+                ]);
+            }
+            event($event);
+        } catch (\Throwable $e) {
+            Log::error('Broadcast falló (' . class_basename($event) . '): ' . $e->getMessage());
+        }
+    }
 
 }
