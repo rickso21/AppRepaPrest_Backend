@@ -124,20 +124,23 @@ class AdController extends Controller
             $ad->save();
 
             return response()->json([
-                'res' => true,
-                'msg' => 'Anuncio creado. Procede al pago.',
-                'ad'  => [
-                    'id'     => $ad->id,
-                    'title'  => $ad->title,
-                    'status' => $ad->status_id,
-                ],
-                'next' => [
-                    'action' => 'pay',
-                    'method' => 'POST',
-                    'url'    => "/ads/{$ad->id}/pay",
-                    'body'   => ['plan_id' => $planId],
-                ],
-            ], 201);
+    'res' => true,
+    'msg' => 'Anuncio creado. Procede al pago.',
+    'ad'  => [
+        'id'           => $ad->id,
+        'title'        => $ad->title,
+        'status'       => $ad->status_id,
+        'link_url'     => $ad->link_url,
+        'phone'        => $ad->phone,
+        'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+    ],
+    'next' => [
+        'action' => 'pay',
+        'method' => 'POST',
+        'url'    => "/ads/{$ad->id}/pay",
+        'body'   => ['plan_id' => $planId],
+    ],
+], 201);
         } catch (\Throwable $th) {
             \Log::error('[ads.create] Error: ' . $th->getMessage());
 
@@ -514,54 +517,56 @@ class AdController extends Controller
     // ================================================================
 
     private function formatearAdParaComunidad(Ad $ad): array
-    {
-        return [
-            'id'          => $ad->id,
-            'title'       => $ad->title,
-            'description' => $ad->description,
-            'image_url'   => $ad->image_url,
-            'video_url'   => $ad->video_url,
-            'link_url'    => $ad->link_url,
-            'phone'       => $ad->phone,
-            'cta_text'    => $ad->cta_text,
-            'merchant'    => [
-                'id'     => $ad->merchant?->id,
-                'nombre' => trim(
-                    ($ad->merchant?->nombre ?? '') . ' ' .
-                    ($ad->merchant?->apellido_p ?? '')
-                ),
-            ],
-        ];
-    }
+{
+    return [
+        'id'           => $ad->id,
+        'title'        => $ad->title,
+        'description'  => $ad->description,
+        'image_url'    => $ad->image_url,
+        'video_url'    => $ad->video_url,
+        'link_url'     => $ad->link_url,
+        'phone'        => $ad->phone,
+        'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+        'cta_text'     => $ad->cta_text,
+        'merchant'     => [
+            'id'     => $ad->merchant?->id,
+            'nombre' => trim(
+                ($ad->merchant?->nombre ?? '') . ' ' .
+                ($ad->merchant?->apellido_p ?? '')
+            ),
+        ],
+    ];
+}
 
-    private function formatearAdParaPanel(Ad $ad): array
-    {
-        return [
-            'id'                    => $ad->id,
-            'title'                 => $ad->title,
-            'description'           => $ad->description,
-            'image_url'             => $ad->image_url,
-            'link_url'              => $ad->link_url,
-            'phone'                 => $ad->phone,
-            'cta_text'              => $ad->cta_text,
-            'status_id'             => $ad->status_id,
-            'status_text'           => $this->getStatusTexto((int) $ad->status_id),
-            'payment_status'        => $ad->payment_status,
-            'payment_status_detail' => $ad->payment_status_detail,
-            'payment_id'            => $ad->payment_id,
-            'preference_id'         => $ad->preference_id,
-            'payment_method'        => $ad->payment_method,
-            'amount_paid'           => $ad->amount_paid,
-            'plan_id'               => $ad->plan_id,
-            'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
-            'priority'              => $ad->priority,
-            'impressions'           => $ad->impressions,
-            'clicks'                => $ad->clicks,
-            'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
-            'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
-            'created_at'            => $ad->created_at?->format('Y-m-d H:i'),
-        ];
-    }
+   private function formatearAdParaPanel(Ad $ad): array
+{
+    return [
+        'id'                    => $ad->id,
+        'title'                 => $ad->title,
+        'description'           => $ad->description,
+        'image_url'             => $ad->image_url,
+        'link_url'              => $ad->link_url,
+        'phone'                 => $ad->phone,
+        'whatsapp_url'          => $this->whatsappUrlParaAd($ad),
+        'cta_text'              => $ad->cta_text,
+        'status_id'             => $ad->status_id,
+        'status_text'           => $this->getStatusTexto((int) $ad->status_id),
+        'payment_status'        => $ad->payment_status,
+        'payment_status_detail' => $ad->payment_status_detail,
+        'payment_id'            => $ad->payment_id,
+        'preference_id'         => $ad->preference_id,
+        'payment_method'        => $ad->payment_method,
+        'amount_paid'           => $ad->amount_paid,
+        'plan_id'               => $ad->plan_id,
+        'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
+        'priority'              => $ad->priority,
+        'impressions'           => $ad->impressions,
+        'clicks'                => $ad->clicks,
+        'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
+        'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
+        'created_at'            => $ad->created_at?->format('Y-m-d H:i'),
+    ];
+}
 
     private function getStatusTexto(int $statusId): string
     {
