@@ -515,6 +515,23 @@ class AdController extends Controller
     // ================================================================
     // HELPERS
     // ================================================================
+    /**
+     * Devuelve la URL de WhatsApp solo si el anuncio tiene teléfono válido.
+     * Si no hay phone, devuelve null y el front debe usar link_url.
+     */
+    private function whatsappUrlParaAd(Ad $ad): ?string
+    {
+        if (empty($ad->phone)) {
+            return null;
+        }
+
+        $mensaje = "Hola, vi tu anuncio \"{$ad->title}\" en la comunidad y me interesa más información.";
+
+        return generarLinkWhatsApp($ad->phone, $mensaje);
+    }
+
+
+
 
     private function formatearAdParaComunidad(Ad $ad): array
 {
