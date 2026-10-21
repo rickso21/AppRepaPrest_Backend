@@ -520,15 +520,31 @@ class AdController extends Controller
      * Si no hay phone, devuelve null y el front debe usar link_url.
      */
     private function whatsappUrlParaAd(Ad $ad): ?string
-    {
-        if (empty($ad->phone)) {
-            return null;
-        }
-
-        $mensaje = "Hola, vi tu anuncio \"{$ad->title}\" en la comunidad y me interesa más información.";
-
-        return generarLinkWhatsApp($ad->phone, $mensaje);
+{
+    if (empty($ad->phone)) {
+        return null;
     }
+
+    // Normaliza (agrega 52 si son 10 dígitos, etc.)
+    $num = normalizarTelefonoWhatsApp($ad->phone);
+
+    // Si el helper falla, intenta un fallback directo con dígitos
+    if (!$num) {
+        $digits = preg_replace('/\D+/', '', (string) $ad->phone);
+
+        if (strlen($digits) === 10) {
+            $num = '52' . $digits;
+        } elseif (strlen($digits) >= 11) {
+            $num = $digits;
+        } else {
+            return null; // teléfono inválido de verdad
+        }
+    }
+
+    $mensaje = "Hola, vi tu anuncio \"{$ad->title}\" en la comunidad y me interesa más información.";
+
+    return 'https://wa.me/' . $num . '?text=' . rawurlencode($mensaje);
+}
 
 
 
