@@ -8,15 +8,15 @@ use Illuminate\Http\Request;
 
 class AdController extends Controller
 {
-    // CONSTANTES
-
     private const PLANES = [
         1 => ['nombre' => 'Básico',   'precio' => 199, 'dias' => 7,  'priority' => 1],
         2 => ['nombre' => 'Estándar', 'precio' => 349, 'dias' => 15, 'priority' => 5],
         3 => ['nombre' => 'Premium',  'precio' => 599, 'dias' => 30, 'priority' => 10],
     ];
 
-    //ENDPOINTS PÚBLICOS
+    // ================================================================
+    // ENDPOINTS PÚBLICOS
+    // ================================================================
 
     public function index(Request $request)
     {
@@ -30,8 +30,7 @@ class AdController extends Controller
 
         $ads = Ad::active()
             ->where(function ($q) use ($user) {
-                $q->whereNull('group_id')
-                    ->orWhere('group_id', $user->grupo_id);
+                $q->whereNull('group_id')->orWhere('group_id', $user->grupo_id);
             })
             ->orderBy('priority', 'desc')
             ->orderBy('created_at', 'desc')
@@ -47,29 +46,22 @@ class AdController extends Controller
     public function impression(Request $request, $id)
     {
         $ad = Ad::find($id);
-
-        if (!$ad) {
-            return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
-        }
-
+        if (!$ad) return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
         $ad->increment('impressions');
-
         return response()->json(['res' => true]);
     }
 
     public function click(Request $request, $id)
     {
         $ad = Ad::find($id);
-
-        if (!$ad) {
-            return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
-        }
-
+        if (!$ad) return response()->json(['res' => false, 'msg' => 'No encontrado'], 404);
         $ad->increment('clicks');
-
         return response()->json(['res' => true]);
     }
 
+    // ================================================================
+    // CREAR ANUNCIO
+    // ================================================================
 
     public function create(Request $request)
     {
@@ -98,6 +90,9 @@ class AdController extends Controller
         }
 
         try {
+            $planId = (int) $request->plan_id;
+            $plan   = self::PLANES[$planId] ?? self::PLANES[1];
+
             $ad = new Ad();
             $ad->merchant_id = $user->id;
             $ad->group_id    = null;
@@ -110,6 +105,8 @@ class AdController extends Controller
             $ad->status_id   = 0;
             $ad->start_at    = null;
             $ad->end_at      = null;
+            $ad->plan_id     = $planId;
+            $ad->amount_paid = (float) $plan['precio'];
 
             if ($request->hasFile('image')) {
                 $file = $request->file('image');
@@ -138,7 +135,7 @@ class AdController extends Controller
                     'action' => 'pay',
                     'method' => 'POST',
                     'url'    => "/ads/{$ad->id}/pay",
-                    'body'   => ['plan_id' => (int) $request->plan_id],
+                    'body'   => ['plan_id' => $planId],
                 ],
             ], 201);
         } catch (\Throwable $th) {
@@ -152,6 +149,10 @@ class AdController extends Controller
             ], 500);
         }
     }
+
+    // ================================================================
+    // PAGAR ANUNCIO
+    // ================================================================
 
     public function pay(Request $request, $id)
     {
@@ -167,8 +168,11 @@ class AdController extends Controller
             return response()->json(['res' => false, 'msg' => 'Anuncio no encontrado'], 404);
         }
 
-        // 🔑 SI YA ESTÁ ACTIVO → no permitir pagar de nuevo
-        if ((int) $ad->status_id === 1 && $ad->end_at && $ad->end_at->isFuture()) {
+        // Ya pagado y vigente
+        if ($ad->payment_status === 'approved'
+            && (int) $ad->status_id === 1
+            && $ad->end_at
+            && $ad->end_at->isFuture()) {
             return response()->json([
                 'res'          => true,
                 'already_paid' => true,
@@ -207,16 +211,14 @@ class AdController extends Controller
         }
 
         $preferenceData = [
-            'items' => [
-                [
-                    'id'          => 'ad_' . $ad->id,
-                    'title'       => "Anuncio {$plan['nombre']} - {$ad->title}",
-                    'description' => "Publicación de anuncio por {$plan['dias']} días",
-                    'quantity'    => 1,
-                    'unit_price'  => (float) $plan['precio'],
-                    'currency_id' => 'MXN',
-                ],
-            ],
+            'items' => [[
+                'id'          => 'ad_' . $ad->id,
+                'title'       => "Anuncio {$plan['nombre']} - {$ad->title}",
+                'description' => "Publicación de anuncio por {$plan['dias']} días",
+                'quantity'    => 1,
+                'unit_price'  => (float) $plan['precio'],
+                'currency_id' => 'MXN',
+            ]],
             'payer' => [
                 'name'  => trim(($user->nombre ?? '') . ' ' . ($user->apellido_p ?? '')),
                 'email' => $user->email ?? 'comercio@email.com',
@@ -251,7 +253,6 @@ class AdController extends Controller
 
         if ($error) {
             \Log::error('[ads.pay] Error de conexión MP', ['error' => $error]);
-
             return response()->json([
                 'res' => false,
                 'msg' => 'Error de conexión con Mercado Pago: ' . $error,
@@ -261,11 +262,7 @@ class AdController extends Controller
         $data = json_decode($response, true);
 
         if ($httpCode !== 201 && $httpCode !== 200) {
-            \Log::error('[ads.pay] Error MP', [
-                'httpCode' => $httpCode,
-                'response' => $data,
-            ]);
-
+            \Log::error('[ads.pay] Error MP', ['httpCode' => $httpCode, 'response' => $data]);
             return response()->json([
                 'res'   => false,
                 'msg'   => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
@@ -273,13 +270,28 @@ class AdController extends Controller
             ], 500);
         }
 
+        // Persistir preferencia y estado pending
+        $ad->preference_id         = $data['id'];
+        $ad->plan_id               = $planId;
+        $ad->amount_paid           = (float) $plan['precio'];
+        $ad->payment_status        = 'pending';
+        $ad->payment_status_detail = 'waiting_payment';
+        $ad->payment_notified_at   = now();
+        $ad->save();
+
         return response()->json([
             'res'                => true,
             'preference_id'      => $data['id'],
             'init_point'         => $data['init_point'],
             'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
+            'payment_status'     => $ad->payment_status,
         ], 200);
     }
+
+    // ================================================================
+    // PANEL COMERCIO
+    // ================================================================
+
     public function myAds(Request $request)
     {
         $user = $request->user();
@@ -301,17 +313,66 @@ class AdController extends Controller
         ], 200);
     }
 
-    // PROCESAMIENTO DE PAGO DE ANUNCIO
+    // ================================================================
+    // CONSULTA MANUAL (opcional)
+    // ================================================================
 
+    public function paymentStatus(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+
+        $ad = Ad::where('id', $id)->where('merchant_id', $user->id)->first();
+        if (!$ad) return response()->json(['res' => false, 'msg' => 'Anuncio no encontrado'], 404);
+
+        return response()->json([
+            'res' => true,
+            'ad'  => [
+                'id'                    => $ad->id,
+                'title'                 => $ad->title,
+                'status_id'             => $ad->status_id,
+                'status_text'           => $this->getStatusTexto((int) $ad->status_id),
+                'payment_status'        => $ad->payment_status,
+                'payment_status_detail' => $ad->payment_status_detail,
+                'payment_id'            => $ad->payment_id,
+                'preference_id'         => $ad->preference_id,
+                'amount_paid'           => $ad->amount_paid,
+                'plan_id'               => $ad->plan_id,
+                'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
+                'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
+                'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
+            ],
+        ], 200);
+    }
+
+    // ================================================================
+    // PROCESAMIENTO (llamado desde verificarPago)
+    // ================================================================
+
+    /**
+     * Procesa un pago de anuncio.
+     * $pago_mp = payload de MP (al menos 'id', ideal completo).
+     */
     public function procesarPagoDeAnuncio(array $pago_mp): array
     {
         $status = $pago_mp['status'] ?? null;
 
-        if ($status !== 'approved') {
+        // Si solo llega el id, consultamos MP
+        if (empty($pago_mp['external_reference']) && !empty($pago_mp['id'])) {
+            $consultado = $this->consultarPagoMP((string) $pago_mp['id']);
+            if ($consultado) {
+                $pago_mp = array_merge($pago_mp, $consultado);
+                $status  = $pago_mp['status'] ?? $status;
+            }
+        }
+
+        $validStatuses = ['approved', 'pending', 'in_process', 'rejected', 'cancelled', 'refunded', 'charged_back'];
+
+        if (!in_array($status, $validStatuses, true)) {
             return [
                 'procesado' => false,
-                'status'    => 'not_approved',
-                'message'   => "Pago con status '{$status}' no aprobado",
+                'status'    => 'ignored',
+                'message'   => "Status '{$status}' no manejado",
             ];
         }
 
@@ -337,8 +398,7 @@ class AdController extends Controller
         }
 
         $plan = self::PLANES[$planId];
-
-        $ad = Ad::find($adId);
+        $ad   = Ad::find($adId);
 
         if (!$ad) {
             return [
@@ -348,38 +408,109 @@ class AdController extends Controller
             ];
         }
 
-        if ((int) $ad->status_id === 1 && $ad->end_at && $ad->end_at->isFuture()) {
+        // Idempotencia
+        $incomingPaymentId = isset($pago_mp['id']) ? (string) $pago_mp['id'] : null;
+
+        if ($ad->payment_status === 'approved'
+            && $incomingPaymentId
+            && $ad->payment_id === $incomingPaymentId) {
             return [
                 'procesado' => true,
-                'status'    => 'already_active',
-                'message'   => 'El anuncio ya estaba activo',
+                'status'    => 'already_processed',
+                'message'   => 'Este pago ya fue procesado',
                 'ad_id'     => $ad->id,
             ];
         }
 
-        $ad->status_id = 1;
-        $ad->start_at  = now();
-        $ad->end_at    = now()->addDays($plan['dias']);
-        $ad->priority  = $plan['priority'];
+        // Guardar SIEMPRE el estado del pago
+        $ad->payment_status        = $status;
+        $ad->payment_status_detail = $pago_mp['status_detail'] ?? null;
+        $ad->payment_id            = $incomingPaymentId ?? $ad->payment_id;
+        $ad->preference_id         = $pago_mp['preference_id'] ?? $ad->preference_id;
+        $ad->payment_method        = $pago_mp['payment_method_id'] ?? $ad->payment_method;
+        $ad->payment_notified_at   = now();
+        $ad->payment_payload       = $pago_mp;
+        $ad->plan_id               = $planId;
+
+        // Solo al aprobar: activar y fijar vigencia
+        if ($status === 'approved') {
+            $debeActivar = (int) $ad->status_id !== 1
+                || !$ad->end_at
+                || $ad->end_at->isPast();
+
+            if ($debeActivar) {
+                $ad->status_id = 1;
+                $ad->start_at  = now();
+                $ad->end_at    = now()->addDays($plan['dias']);
+                $ad->priority  = $plan['priority'];
+            }
+
+            $ad->paid_at     = $ad->paid_at ?? now();
+            $ad->amount_paid = $ad->amount_paid ?? (float) $plan['precio'];
+        }
+
         $ad->save();
 
-        \Log::info('[ads.procesarPagoDeAnuncio] Anuncio activado', [
-            'ad_id'      => $ad->id,
-            'payment_id' => $pago_mp['id'] ?? null,
-            'plan_id'    => $planId,
-            'end_at'     => $ad->end_at,
+        \Log::info('[ads.procesarPagoDeAnuncio]', [
+            'ad_id'          => $ad->id,
+            'payment_id'     => $ad->payment_id,
+            'payment_status' => $ad->payment_status,
+            'plan_id'        => $planId,
+            'status_id'      => $ad->status_id,
+            'end_at'         => $ad->end_at,
         ]);
 
         return [
-            'procesado' => true,
-            'status'    => 'success',
-            'message'   => 'Anuncio activado correctamente',
-            'ad_id'     => $ad->id,
+            'procesado'      => true,
+            'status'         => $status === 'approved' ? 'success' : $status,
+            'message'        => $status === 'approved'
+                ? 'Anuncio activado correctamente'
+                : "Pago en estado {$status} registrado",
+            'ad_id'          => $ad->id,
+            'payment_status' => $ad->payment_status,
         ];
     }
 
+    /**
+     * Consulta el pago real a Mercado Pago.
+     * Público para reutilizarse desde verificarPago.
+     */
+    public function consultarPagoMP(string $paymentId): ?array
+    {
+        $token = config('services.mercadopago.access_token');
+        if (empty($token) || $token === 'null') return null;
+
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => "https://api.mercadopago.com/v1/payments/{$paymentId}",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $token,
+                'Accept: application/json',
+            ],
+            CURLOPT_SSL_VERIFYPEER => config('app.env') === 'production',
+            CURLOPT_TIMEOUT        => 20,
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error    = curl_error($ch);
+        curl_close($ch);
+
+        if ($error || $httpCode !== 200) {
+            \Log::error('[ads.consultarPagoMP]', [
+                'payment_id' => $paymentId,
+                'httpCode'   => $httpCode,
+                'error'      => $error,
+            ]);
+            return null;
+        }
+
+        return json_decode($response, true);
+    }
+
     // ================================================================
-    // HELPERS PRIVADOS
+    // HELPERS
     // ================================================================
 
     private function formatearAdParaComunidad(Ad $ad): array
@@ -397,7 +528,7 @@ class AdController extends Controller
                 'id'     => $ad->merchant?->id,
                 'nombre' => trim(
                     ($ad->merchant?->nombre ?? '') . ' ' .
-                        ($ad->merchant?->apellido_p ?? '')
+                    ($ad->merchant?->apellido_p ?? '')
                 ),
             ],
         ];
@@ -406,21 +537,29 @@ class AdController extends Controller
     private function formatearAdParaPanel(Ad $ad): array
     {
         return [
-            'id'          => $ad->id,
-            'title'       => $ad->title,
-            'description' => $ad->description,
-            'image_url'   => $ad->image_url,
-            'link_url'    => $ad->link_url,
-            'phone'       => $ad->phone,
-            'cta_text'    => $ad->cta_text,
-            'status_id'   => $ad->status_id,
-            'status_text' => $this->getStatusTexto($ad->status_id),
-            'priority'    => $ad->priority,
-            'impressions' => $ad->impressions,
-            'clicks'      => $ad->clicks,
-            'start_at'    => $ad->start_at?->format('Y-m-d H:i'),
-            'end_at'      => $ad->end_at?->format('Y-m-d H:i'),
-            'created_at'  => $ad->created_at?->format('Y-m-d H:i'),
+            'id'                    => $ad->id,
+            'title'                 => $ad->title,
+            'description'           => $ad->description,
+            'image_url'             => $ad->image_url,
+            'link_url'              => $ad->link_url,
+            'phone'                 => $ad->phone,
+            'cta_text'              => $ad->cta_text,
+            'status_id'             => $ad->status_id,
+            'status_text'           => $this->getStatusTexto((int) $ad->status_id),
+            'payment_status'        => $ad->payment_status,
+            'payment_status_detail' => $ad->payment_status_detail,
+            'payment_id'            => $ad->payment_id,
+            'preference_id'         => $ad->preference_id,
+            'payment_method'        => $ad->payment_method,
+            'amount_paid'           => $ad->amount_paid,
+            'plan_id'               => $ad->plan_id,
+            'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
+            'priority'              => $ad->priority,
+            'impressions'           => $ad->impressions,
+            'clicks'                => $ad->clicks,
+            'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
+            'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
+            'created_at'            => $ad->created_at?->format('Y-m-d H:i'),
         ];
     }
 

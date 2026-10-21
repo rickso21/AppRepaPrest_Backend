@@ -25,6 +25,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/my-ads', [AdController::class, 'myAds']);
         Route::post('/create', [AdController::class, 'create']);
         Route::post('/{id}/pay', [AdController::class, 'pay']);
+            Route::get('/{id}/payment-status', [AdController::class, 'paymentStatus']);
+
+
         Route::post('/{id}/impression', [AdController::class, 'impression']);
         Route::post('/{id}/click', [AdController::class, 'click']);
     });
