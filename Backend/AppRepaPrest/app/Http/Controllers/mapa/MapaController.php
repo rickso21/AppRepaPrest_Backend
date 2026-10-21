@@ -14,7 +14,7 @@ use App\Events\UbicacionActualizada;
 use App\Events\EstadoCambiado;
 use App\Events\PanicoActivado;
 use App\Events\PanicoDesactivado;
- use Illuminate\Support\Facades\Cache;
+
 class MapaController extends Controller
 {
 public function Current_location(Request $request)
@@ -50,10 +50,7 @@ public function Current_location(Request $request)
 
         // WebSocket: avisa a los miembros del grupo (reemplaza el polling de GET /mapa/repartidores)
         if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
-
-
-
-        $this->emitir(new UbicacionActualizada(
+            $this->emitir(new UbicacionActualizada(
                 (int) $user->grupo_id, (int) $user->id,
                 trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
                 (float) $request->latitud, (float) $request->longitud, 'conectado'
