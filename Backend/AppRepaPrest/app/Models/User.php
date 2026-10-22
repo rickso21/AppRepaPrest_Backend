@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Log;
     'telefono',
     'ciudad',
     'avatar',
+    'avatar_circular',
      'nombre_comercio',
     'portada',
     'grupo_id',
@@ -38,6 +39,10 @@ use Illuminate\Support\Facades\Log;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
+
+
+
+
 
     // ========== CONFIGURACIÓN DE CASTS ==========
     protected function casts(): array
@@ -82,6 +87,10 @@ class User extends Authenticatable
             }
         });
     }
+
+
+    protected $appends = ['avatar_url', 'portada_url', 'avatar_circular_url'];
+
 
     // ========== RELACIONES ==========
 
@@ -308,12 +317,18 @@ class User extends Authenticatable
     }
 
     // Accessors para devolver URL completa
-    protected $appends = ['avatar_url', 'portada_url'];
 
     public function getAvatarUrlAttribute(): ?string
     {
         return $this->avatar ? asset('storage/' . $this->avatar) : null;
     }
+public function getAvatarCircularUrlAttribute(): ?string
+{
+    return $this->avatar_circular
+        ? asset('storage/' . $this->avatar_circular)
+        : null;
+}
+
 
     public function getPortadaUrlAttribute(): ?string
     {

@@ -282,6 +282,7 @@ class loginController extends Controller
                     'telefono'        => $user->telefono,
                     'ciudad'          => $user->ciudad,
                     'avatar_url'      => $user->avatar_url,
+                     'avatar_circular_url' => $user->avatar_circular_url,
                     'portada_url'     => $user->portada_url,
                 ],
             ], 200);
@@ -311,6 +312,7 @@ class loginController extends Controller
                 'email'              => $user->email,
                 'ciudad'             => $user->ciudad,
                 'avatar_url'         => $user->avatar_url,
+                'avatar_circular_url' => $user->avatar_circular_url,
                 'portada_url'        => $user->portada_url,
                 'rol'                => $user->rol_id,
                 'grupo'              => $user->grupo->group_name ?? null,
@@ -461,6 +463,7 @@ class loginController extends Controller
                 'id'         => $u->id,
                 'nombre'     => user_nombre_completo($u),
                 'avatar_url' => $u->avatar_url,
+                 'avatar_circular_url' => $u->avatar_circular_url,
                 'telefono'   => $u->telefono,
                 'rol_id'     => $u->rol_id,
             ]);

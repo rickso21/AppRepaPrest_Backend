@@ -59,6 +59,7 @@ if (!function_exists('user_formatear_basico')) {
             'nombre'          => $user->nombre,
             'nombre_completo' => user_nombre_completo($user),
             'avatar_url'      => $user->avatar_url,
+             'avatar_circular_url' => $user->avatar_circular_url,
             'portada_url'     => $user->portada_url,
         ];
     }
@@ -80,6 +81,7 @@ if (!function_exists('user_formatear_completo')) {
             'status_id'       => $user->status_id,
             'grupo_id'        => $user->grupo_id,
             'avatar_url'      => $user->avatar_url,
+             'avatar_circular_url' => $user->avatar_circular_url,
             'portada_url'     => $user->portada_url,
             'created_at'      => $user->created_at,
         ];
@@ -102,6 +104,7 @@ if (!function_exists('user_formatear_login')) {
             'grupo_id'        => $user->grupo_id,
             'rol_id'          => $user->rol_id,
             'avatar_url'      => $user->avatar_url,
+            'avatar_circular_url' => $user->avatar_circular_url,
             'portada_url'     => $user->portada_url,
             'nombre_comercio' => $user->nombre_comercio ?? null,
         ];
@@ -111,10 +114,6 @@ if (!function_exists('user_formatear_login')) {
 //CREACIÓN DE USUARIO
 
 if (!function_exists('user_crear_desde_request')) {
-    /**
-     * Crea un usuario base desde un request.
-     * Procesa avatar/portada y asigna rol/status.
-     */
     function user_crear_desde_request($request, int $rolId): \App\Models\User
     {
         $user = new \App\Models\User();
@@ -132,6 +131,12 @@ if (!function_exists('user_crear_desde_request')) {
         if ($request->hasFile('avatar')) {
             $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
             \Illuminate\Support\Facades\Log::info('[crearUsuario] Avatar guardado', ['path' => $user->avatar]);
+
+            // 🎯 Generar el avatar circular
+            $circular = user_generar_avatar_circular($user->avatar);
+            if ($circular) {
+                $user->avatar_circular = $circular;
+            }
         }
 
         if ($request->hasFile('portada')) {
@@ -144,6 +149,7 @@ if (!function_exists('user_crear_desde_request')) {
         return $user;
     }
 }
+
 
 //ACTUALIZACIÓN DE USUARIO
 
@@ -168,18 +174,29 @@ if (!function_exists('user_actualizar_datos_basicos')) {
 }
 
 if (!function_exists('user_actualizar_archivos')) {
-    /**
-     * Reemplaza avatar y portada del usuario, eliminando los anteriores.
-     */
     function user_actualizar_archivos(\App\Models\User $user, $request): void
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
 
         if ($request->hasFile('avatar')) {
+            // Borrar el avatar anterior
             if ($user->avatar && $disk->exists($user->avatar)) {
                 $disk->delete($user->avatar);
             }
+            // Borrar el PNG circular anterior
+            if ($user->avatar_circular) {
+                user_eliminar_avatar_circular($user->avatar_circular);
+                $user->avatar_circular = null;
+            }
+
+            // Guardar el nuevo avatar
             $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+
+            // 🎯 Generar el nuevo PNG circular
+            $circular = user_generar_avatar_circular($user->avatar);
+            if ($circular) {
+                $user->avatar_circular = $circular;
+            }
         }
 
         if ($request->hasFile('portada')) {
@@ -2137,5 +2154,83 @@ if (!function_exists('comment_log_error')) {
     function comment_log_error(string $context, \Throwable $th): void
     {
         \Log::error("[{$context}] Error", ['error' => $th->getMessage()]);
+    }
+}
+
+
+// ============================================================
+// AVATAR CIRCULAR (para marcadores del mapa en Android)
+// ============================================================
+
+if (!function_exists('user_generar_avatar_circular')) {
+    /**
+     * Genera un PNG circular con transparencia en las esquinas a partir
+     * de la ruta relativa del avatar en storage/public.
+     *
+     * @param string $avatarPath Ruta relativa (ej: "users/avatars/abc.jpg")
+     * @return string|null Ruta relativa del PNG (ej: "users/avatars/abc_circular.png")
+     */
+    function user_generar_avatar_circular(string $avatarPath): ?string
+    {
+        try {
+            $fullPath = storage_path('app/public/' . $avatarPath);
+
+            if (!file_exists($fullPath)) {
+                \Log::warning('[avatar-circular] Archivo no existe', ['path' => $fullPath]);
+                return null;
+            }
+
+            $info = pathinfo($avatarPath);
+            $circularRelative = $info['dirname'] . '/' . $info['filename'] . '_circular.png';
+            $circularFull = storage_path('app/public/' . $circularRelative);
+
+            if (!is_dir(dirname($circularFull))) {
+                mkdir(dirname($circularFull), 0755, true);
+            }
+
+            $manager = new \Intervention\Image\ImageManager(
+                new \Intervention\Image\Drivers\Gd\Driver()
+            );
+
+            $img = $manager->read($fullPath);
+
+            // 1. Redimensionar a 200x200
+            $img->cover(200, 200);
+
+            // 2. Máscara circular (círculo blanco en fondo transparente)
+            $mask = $manager->create(200, 200)->fill('transparent');
+            $mask->drawCircle(100, 100, function ($circle) {
+                $circle->radius(100);
+                $circle->background('white');
+            });
+
+            // 3. Aplicar máscara
+            $img->mask($mask, true);
+
+            // 4. Guardar como PNG (soporta transparencia)
+            $img->toPng()->save($circularFull);
+
+            return $circularRelative;
+        } catch (\Throwable $e) {
+            \Log::error('[avatar-circular] Error: ' . $e->getMessage(), [
+                'path' => $avatarPath,
+            ]);
+            return null;
+        }
+    }
+}
+
+if (!function_exists('user_eliminar_avatar_circular')) {
+    /**
+     * Elimina el PNG circular asociado a un avatar (al reemplazar/eliminar).
+     */
+    function user_eliminar_avatar_circular(?string $avatarCircularPath): void
+    {
+        if (!$avatarCircularPath) return;
+
+        $fullPath = storage_path('app/public/' . $avatarCircularPath);
+        if (file_exists($fullPath)) {
+            @unlink($fullPath);
+        }
     }
 }
