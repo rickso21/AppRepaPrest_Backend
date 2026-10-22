@@ -14,6 +14,7 @@ use App\Events\UbicacionActualizada;
 use App\Events\EstadoCambiado;
 use App\Events\PanicoActivado;
 use App\Events\PanicoDesactivado;
+use App\Services\PanicPush;
 
 class MapaController extends Controller
 {
@@ -101,6 +102,7 @@ public function Current_location(Request $request)
                 'u.nombre',
                 'u.apellido_p',
                 'u.telefono',
+                'u.avatar',
                 'ub.latitud',
                 'ub.longitud',
                 'ub.created_at as ultima_ubicacion',
@@ -133,6 +135,7 @@ public function Current_location(Request $request)
                 'id' => (int) $item->id,
                 'nombre' => trim($item->nombre . ' ' . ($item->apellido_p ?? '')),
                 'telefono' => $item->telefono ?? '',
+                'avatar_url' => $item->avatar ? asset('storage/' . $item->avatar) : null,
                 'latitud' => $item->latitud ? (float) $item->latitud : 0,
                 'longitud' => $item->longitud ? (float) $item->longitud : 0,
                 'estado' => $item->estado_repartidor ?? 'desconectado',
@@ -328,6 +331,17 @@ public function UserStatus(Request $request)
                     (float) $request->latitud, (float) $request->longitud,
                     $request->tipo_emergencia, (int) $alerta->id
                 ));
+
+              $gid = (int) $user->grupo_id;
+                $uid = (int) $user->id;
+                $nom = trim($user->nombre . ' ' . ($user->apellido_p ?? ''));
+                $aid = (int) $alerta->id;
+                $lat = (float) $request->latitud;
+                $lng = (float) $request->longitud;
+
+                // Se ejecuta al terminar la respuesta. No usa cola ni serializa nada.
+                // `static` evita capturar $this (el controlador).
+                app()->terminating(static fn () => PanicPush::enviar($gid, $uid, $nom, $aid, $lat, $lng));
             }
 
             return response()->json([

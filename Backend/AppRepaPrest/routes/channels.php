@@ -5,29 +5,26 @@ use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
-Broadcast::channel('group.{groupId}', function (User $user, $groupId) {
-    $grupoCanal = (int) $groupId;
+/**
+ * Autorización de canales privados por grupo.
+ *
+ * CAUSA RAÍZ DEL BUG: los eventos (UbicacionActualizada, EstadoCambiado, PanicoActivado,
+ * PanicoDesactivado) y la app usan el canal "grupo.{id}", pero aquí solo estaba
+ * registrado "group.{groupId}". Sin coincidencia, /broadcasting/auth responde 403 y la app
+ * nunca queda suscrita → no recibe NINGÚN evento (ni pánico ni ubicación).
+ */
+$autorizarGrupo = function (User $user, $grupoId) {
+    $grupoCanal = (int) $grupoId;
     $miGrupo    = (int) $user->grupo_id;
 
-    // 1) Es su propio grupo → autorizado
+    // 1) Su propio grupo → autorizado
     if ($miGrupo === $grupoCanal) {
         return true;
     }
 
-    // 2) Es un grupo visible (emergencia / monitoreo)
+    // 2) Grupo visible (emergencia / monitoreo / subgrupos)
     try {
-        $gruposVisibles = Grupo::gruposVisiblesDe($miGrupo);
-        $autorizado = in_array($grupoCanal, $gruposVisibles, true);
-
-        Log::info('[channels] verificación de canal', [
-            'user_id'         => $user->id,
-            'user_grupo_id'   => $miGrupo,
-            'grupo_canal'     => $grupoCanal,
-            'grupos_visibles' => $gruposVisibles,
-            'autorizado'      => $autorizado,
-        ]);
-
-        return $autorizado;
+        return in_array($grupoCanal, Grupo::gruposVisiblesDe($miGrupo), true);
     } catch (\Throwable $e) {
         Log::error('[channels] error verificando canal', [
             'user_id' => $user->id,
@@ -36,4 +33,10 @@ Broadcast::channel('group.{groupId}', function (User $user, $groupId) {
         ]);
         return false;
     }
-});
+};
+
+// Canal que usan los eventos y la app móvil
+Broadcast::channel('grupo.{grupoId}', $autorizarGrupo);
+
+// Se conserva el nombre anterior por compatibilidad (si algo más lo usa)
+Broadcast::channel('group.{groupId}', $autorizarGrupo);
