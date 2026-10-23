@@ -91,15 +91,16 @@ class User extends Authenticatable
     protected $appends = ['avatar_url', 'avatar_circular_url'];
 
 
-        public function getAvatarCircularUrlAttribute()
-    {
-        if (!$this->avatar_circular) return null;
+       public function getAvatarCircularUrlAttribute()
+{
+    if (!$this->avatar_circular) return null;
 
-        $path = storage_path('app/public/' . $this->avatar_circular);
-        $v = file_exists($path) ? filemtime($path) : time();
+    $path = storage_path('app/public/' . $this->avatar_circular);
+    // 🔧 FIX: Si no existe, poner 0 en vez de time() para que la URL sea consistente
+    $v = file_exists($path) ? filemtime($path) : 0;
 
-        return asset('storage/' . $this->avatar_circular) . '?v=' . $v;
-    }
+    return asset('storage/' . $this->avatar_circular) . ($v ? '?v=' . $v : '');
+}
 
     // ========== RELACIONES ==========
 
