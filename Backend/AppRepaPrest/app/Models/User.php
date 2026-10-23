@@ -43,7 +43,6 @@ class User extends Authenticatable
 
 
 
-
     // ========== CONFIGURACIÓN DE CASTS ==========
     protected function casts(): array
     {
@@ -89,8 +88,18 @@ class User extends Authenticatable
     }
 
 
-    protected $appends = ['avatar_url', 'portada_url', 'avatar_circular_url'];
+    protected $appends = ['avatar_url', 'avatar_circular_url'];
 
+
+        public function getAvatarCircularUrlAttribute()
+    {
+        if (!$this->avatar_circular) return null;
+
+        $path = storage_path('app/public/' . $this->avatar_circular);
+        $v = file_exists($path) ? filemtime($path) : time();
+
+        return asset('storage/' . $this->avatar_circular) . '?v=' . $v;
+    }
 
     // ========== RELACIONES ==========
 
@@ -322,12 +331,6 @@ class User extends Authenticatable
     {
         return $this->avatar ? asset('storage/' . $this->avatar) : null;
     }
-public function getAvatarCircularUrlAttribute(): ?string
-{
-    return $this->avatar_circular
-        ? asset('storage/' . $this->avatar_circular)
-        : null;
-}
 
 
     public function getPortadaUrlAttribute(): ?string

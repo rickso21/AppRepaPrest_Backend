@@ -2163,92 +2163,101 @@ if (!function_exists('comment_log_error')) {
 // ============================================================
 
 if (!function_exists('user_generar_avatar_circular')) {
-    /**
-     * Genera un PNG circular con transparencia en las esquinas.
-     * Compatible con Intervention Image v3 (que eliminó el método mask()).
-     * Usa GD nativo para aplicar la máscara circular.
-     *
-     * @param string $avatarPath Ruta relativa (ej: "users/avatars/abc.jpg")
-     * @return string|null Ruta relativa del PNG (ej: "users/avatars/abc_circular.png")
-     */
-    function user_generar_avatar_circular(string $avatarPath): ?string
-{
-    try {
-        $fullPath = storage_path('app/public/' . $avatarPath);
+    function user_generar_avatar_circular(string $avatarPath, int $size = 128): ?string
+    {
+        try {
+            $fullPath = storage_path('app/public/' . $avatarPath);
 
-        if (!file_exists($fullPath)) {
-            \Log::warning('[avatar-circular] Archivo no existe', ['path' => $fullPath]);
-            return null;
-        }
+            if (!file_exists($fullPath)) {
+                \Log::warning('[avatar-circular] Archivo no existe', ['path' => $fullPath]);
+                return null;
+            }
 
-        $info = pathinfo($avatarPath);
-        $circularRelative = $info['dirname'] . '/' . $info['filename'] . '_circular.png';
-        $circularFull = storage_path('app/public/' . $circularRelative);
+            $info = pathinfo($avatarPath);
+            $circularRelative = $info['dirname'] . '/' . $info['filename'] . '_circular.png';
+            $circularFull = storage_path('app/public/' . $circularRelative);
 
-        if (!is_dir(dirname($circularFull))) {
-            mkdir(dirname($circularFull), 0755, true);
-        }
+            if (!is_dir(dirname($circularFull))) {
+                mkdir(dirname($circularFull), 0755, true);
+            }
 
-        // 1. Leer imagen original con GD
-        $source = @imagecreatefromstring(file_get_contents($fullPath));
-        if (!$source) {
-            throw new \Exception('No se pudo leer la imagen con GD');
-        }
+            $source = @imagecreatefromstring(file_get_contents($fullPath));
+            if (!$source) {
+                throw new \Exception('No se pudo leer la imagen con GD');
+            }
 
-        $size = 15;  // ← CAMBIADO: de 200 a 80 (puedes usar 60 si quieres más pequeño)
-
-        // 2. Redimensionar
-        $square = imagecreatetruecolor($size, $size);
-        imagealphablending($square, false);
-        imagesavealpha($square, true);
-        imagecopyresampled(
-            $square, $source,
-            0, 0, 0, 0,
-            $size, $size,
-            imagesx($source), imagesy($source)
-        );
-        imagedestroy($source);
-
-        // 3. Canvas circular transparente
-        $circular = imagecreatetruecolor($size, $size);
-        imagealphablending($circular, false);
-        imagesavealpha($circular, true);
-        $transparent = imagecolorallocatealpha($circular, 0, 0, 0, 127);
-        imagefill($circular, 0, 0, $transparent);
-
-        // 4. Copiar solo los píxeles dentro del círculo
-        $center = $size / 2;
-        $radius = $size / 2;
-        for ($x = 0; $x < $size; $x++) {
-            for ($y = 0; $y < $size; $y++) {
-                $dist = sqrt(pow($x - $center, 2) + pow($y - $center, 2));
-                if ($dist <= $radius) {
-                    $color = imagecolorat($square, $x, $y);
-                    imagesetpixel($circular, $x, $y, $color);
+            // Corregir orientación de fotos de celular (EXIF)
+            $ext = strtolower($info['extension'] ?? '');
+            if (function_exists('exif_read_data') && in_array($ext, ['jpg', 'jpeg'])) {
+                $exif = @exif_read_data($fullPath);
+                $angle = [3 => 180, 6 => -90, 8 => 90][$exif['Orientation'] ?? 1] ?? 0;
+                if ($angle) {
+                    $rot = imagerotate($source, $angle, 0);
+                    if ($rot) {
+                        imagedestroy($source);
+                        $source = $rot;
+                    }
                 }
             }
+
+            // Recorte cuadrado centrado (sin deformar)
+            $w = imagesx($source);
+            $h = imagesy($source);
+            $side = min($w, $h);
+            $sx = (int) (($w - $side) / 2);
+            $sy = (int) (($h - $side) / 2);
+
+            $square = imagecreatetruecolor($size, $size);
+            imagealphablending($square, false);
+            imagesavealpha($square, true);
+            imagecopyresampled($square, $source, 0, 0, $sx, $sy, $size, $size, $side, $side);
+            imagedestroy($source);
+
+            // Máscara circular con borde suave
+            $circular = imagecreatetruecolor($size, $size);
+            imagealphablending($circular, false);
+            imagesavealpha($circular, true);
+            imagefill($circular, 0, 0, imagecolorallocatealpha($circular, 0, 0, 0, 127));
+
+            $c = ($size - 1) / 2;
+            $r = $size / 2;
+
+            for ($x = 0; $x < $size; $x++) {
+                for ($y = 0; $y < $size; $y++) {
+                    $d = sqrt(($x - $c) ** 2 + ($y - $c) ** 2);
+                    if ($d > $r) continue;
+
+                    $coverage = min(1, $r - $d);          // 1px de suavizado
+                    $rgba = imagecolorat($square, $x, $y);
+                    $srcA = ($rgba >> 24) & 0x7F;         // 0 = opaco, 127 = transparente
+                    $alpha = (int) round(127 - (127 - $srcA) * $coverage);
+
+                    imagesetpixel($circular, $x, $y, imagecolorallocatealpha(
+                        $circular,
+                        ($rgba >> 16) & 0xFF,
+                        ($rgba >> 8) & 0xFF,
+                        $rgba & 0xFF,
+                        $alpha
+                    ));
+                }
+            }
+            imagedestroy($square);
+
+            imagepng($circular, $circularFull, 6);
+            imagedestroy($circular);
+
+            \Log::info('[avatar-circular] PNG generado', [
+                'source' => $avatarPath,
+                'output' => $circularRelative,
+                'size'   => filesize($circularFull),
+            ]);
+
+            return $circularRelative;
+        } catch (\Throwable $e) {
+            \Log::error('[avatar-circular] Error: ' . $e->getMessage(), ['path' => $avatarPath]);
+            return null;
         }
-        imagedestroy($square);
-
-        // 5. Guardar PNG
-        imagepng($circular, $circularFull);
-        imagedestroy($circular);
-
-        \Log::info('[avatar-circular] PNG generado', [
-            'source' => $avatarPath,
-            'output' => $circularRelative,
-            'size'   => filesize($circularFull),
-        ]);
-
-        return $circularRelative;
-    } catch (\Throwable $e) {
-        \Log::error('[avatar-circular] Error: ' . $e->getMessage(), [
-            'path'  => $avatarPath,
-            'trace' => $e->getTraceAsString(),
-        ]);
-        return null;
     }
-}
 }
 
 if (!function_exists('user_eliminar_avatar_circular')) {
