@@ -52,10 +52,15 @@ public function Current_location(Request $request)
         // WebSocket: avisa a los miembros del grupo (reemplaza el polling de GET /mapa/repartidores)
         if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
             $this->emitir(new UbicacionActualizada(
-                (int) $user->grupo_id, (int) $user->id,
-                trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
-                (float) $request->latitud, (float) $request->longitud, 'conectado'
-            ));
+    (int) $user->grupo_id,
+    (int) $user->id,
+    trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
+    (float) $request->latitud,
+    (float) $request->longitud,
+    'conectado',
+    $user->avatar_url,
+    $user->avatar_circular_url,
+));
         }
 
         return response()->json([
@@ -132,20 +137,23 @@ public function Current_location(Request $request)
 
         // Formatear respuesta
         $repartidoresFormateados = $repartidores->map(function($item) {
-            return [
-                'id' => (int) $item->id,
-                'nombre' => trim($item->nombre . ' ' . ($item->apellido_p ?? '')),
-                'telefono' => $item->telefono ?? '',
-                'avatar_url' => $item->avatar ? asset('storage/' . $item->avatar) : null,
-                'latitud' => $item->latitud ? (float) $item->latitud : 0,
-                'longitud' => $item->longitud ? (float) $item->longitud : 0,
-                'estado' => $item->estado_repartidor ?? 'desconectado',
-                'ultima_ubicacion' => $item->ultima_ubicacion,
-                'en_panico' => !is_null($item->alerta_panico_id),
-                'tipo_emergencia' => $item->tipo_emergencia ?? null,
-                'hora_panico' => $item->hora_panico ?? null
-            ];
-        });
+    return [
+        'id' => (int) $item->id,
+        'nombre' => trim($item->nombre . ' ' . ($item->apellido_p ?? '')),
+        'telefono' => $item->telefono ?? '',
+        'avatar_url' => $item->avatar ? asset('storage/' . $item->avatar) : null,
+        'avatar_circular_url' => $item->avatar_circular
+            ? asset('storage/' . $item->avatar_circular)
+            : null,   // ← AGREGAR ESTA LÍNEA
+        'latitud' => $item->latitud ? (float) $item->latitud : 0,
+        'longitud' => $item->longitud ? (float) $item->longitud : 0,
+        'estado' => $item->estado_repartidor ?? 'desconectado',
+        'ultima_ubicacion' => $item->ultima_ubicacion,
+        'en_panico' => !is_null($item->alerta_panico_id),
+        'tipo_emergencia' => $item->tipo_emergencia ?? null,
+        'hora_panico' => $item->hora_panico ?? null
+    ];
+});
 
         return response()->json([
             'res' => true,
