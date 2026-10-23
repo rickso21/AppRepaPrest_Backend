@@ -14,8 +14,14 @@ class UbicacionActualizada implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets;
 
     public function __construct(
-        public int $grupoId, public int $userId, public string $nombre,
-        public float $latitud, public float $longitud, public string $estado = 'conectado',
+        public int $grupoId,
+        public int $userId,
+        public string $nombre,
+        public float $latitud,
+        public float $longitud,
+        public string $estado = 'conectado',
+        public ?string $avatarUrl = null,
+        public ?string $avatarCircularUrl = null,
     ) {}
 
     public function broadcastOn(): array
@@ -31,9 +37,14 @@ class UbicacionActualizada implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'id' => $this->userId, 'nombre' => $this->nombre,
-            'latitud' => $this->latitud, 'longitud' => $this->longitud,
-            'estado' => $this->estado, 'hora' => now()->toISOString(),
+            'id' => $this->userId,
+            'nombre' => $this->nombre,
+            'latitud' => $this->latitud,
+            'longitud' => $this->longitud,
+            'estado' => $this->estado,
+            'avatar_url' => $this->avatarUrl,
+            'avatar_circular_url' => $this->avatarCircularUrl,
+            'hora' => now()->toISOString(),
         ];
     }
 }

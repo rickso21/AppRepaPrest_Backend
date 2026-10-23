@@ -103,6 +103,7 @@ public function Current_location(Request $request)
                 'u.apellido_p',
                 'u.telefono',
                 'u.avatar',
+                'u.avatar_circular',
                 'ub.latitud',
                 'ub.longitud',
                 'ub.created_at as ultima_ubicacion',
@@ -181,7 +182,7 @@ public function Specific_user(Request $request, $id)
         ->where('u.id', '=', $id)
         ->where('u.status_id', 1)
         ->where('u.grupo_id', $user->grupo_id)
-        ->select('u.id','u.nombre','u.apellido_p','u.telefono','ub.latitud','ub.longitud','er.estado as estado_repartidor')
+        ->select('u.id','u.nombre','u.apellido_p','u.telefono','u.avatar','u.avatar_circular','ub.latitud','ub.longitud','er.estado as estado_repartidor')
         ->first();
 
     if (!$repartidor) {
@@ -191,10 +192,22 @@ public function Specific_user(Request $request, $id)
         ], 404);
         }
 
-        return response()->json([
+         return response()->json([
             'res' => true,
-            'data' => $repartidor
+            'data' => [
+                'id' => (int) $repartidor->id,
+                'nombre' => trim($repartidor->nombre . ' ' . ($repartidor->apellido_p ?? '')),
+                'telefono' => $repartidor->telefono ?? '',
+                'avatar_url' => $repartidor->avatar ? asset('storage/' . $repartidor->avatar) : null,
+                'avatar_circular_url' => $repartidor->avatar_circular
+                    ? asset('storage/' . $repartidor->avatar_circular)
+                    : null,  // ← NUEVO
+                'latitud' => $repartidor->latitud ? (float) $repartidor->latitud : 0,
+                'longitud' => $repartidor->longitud ? (float) $repartidor->longitud : 0,
+                'estado' => $repartidor->estado_repartidor ?? 'desconectado',
+            ]
         ]);
+
 
     } catch (\Exception $e) {
         return response()->json([
