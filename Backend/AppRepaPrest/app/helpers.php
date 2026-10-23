@@ -2163,18 +2163,10 @@ if (!function_exists('comment_log_error')) {
 // ============================================================
 
 if (!function_exists('user_generar_avatar_circular')) {
-    /**
-     * Genera un PNG circular con transparencia en las esquinas a partir
-     * de la ruta relativa del avatar en storage/public.
-     *
-     * @param string $avatarPath Ruta relativa (ej: "users/avatars/abc.jpg")
-     * @return string|null Ruta relativa del PNG (ej: "users/avatars/abc_circular.png")
-     */
     function user_generar_avatar_circular(string $avatarPath): ?string
     {
         try {
             $fullPath = storage_path('app/public/' . $avatarPath);
-
             if (!file_exists($fullPath)) {
                 \Log::warning('[avatar-circular] Archivo no existe', ['path' => $fullPath]);
                 return null;
@@ -2188,32 +2180,34 @@ if (!function_exists('user_generar_avatar_circular')) {
                 mkdir(dirname($circularFull), 0755, true);
             }
 
+            // 1. Configurar el manager de v3
             $manager = new \Intervention\Image\ImageManager(
                 new \Intervention\Image\Drivers\Gd\Driver()
             );
 
-            $img = $manager->read($fullPath);
+            // 2. Leer y redimensionar el avatar
+            $image = $manager->read($fullPath)->cover(200, 200);
 
-            // 1. Redimensionar a 200x200
-            $img->cover(200, 200);
-
-            // 2. Máscara circular (círculo blanco en fondo transparente)
+            // 3. Crear la máscara circular (círculo blanco sobre fondo transparente)
             $mask = $manager->create(200, 200)->fill('transparent');
             $mask->drawCircle(100, 100, function ($circle) {
                 $circle->radius(100);
                 $circle->background('white');
             });
 
-            // 3. Aplicar máscara
-            $img->mask($mask, true);
+            // 4. Aplicar la máscara usando el paquete externo
+            $masked = $image->modify(
+                new \DialloIbrahima\InterventionMask\ApplyMask($mask)
+            );
 
-            // 4. Guardar como PNG (soporta transparencia)
-            $img->toPng()->save($circularFull);
+            // 5. Guardar como PNG (con transparencia)
+            $masked->toPng()->save($circularFull);
 
             return $circularRelative;
         } catch (\Throwable $e) {
             \Log::error('[avatar-circular] Error: ' . $e->getMessage(), [
                 'path' => $avatarPath,
+                'trace' => $e->getTraceAsString(),
             ]);
             return null;
         }
