@@ -2195,7 +2195,7 @@ if (!function_exists('user_generar_avatar_circular')) {
             throw new \Exception('No se pudo leer la imagen con GD');
         }
 
-        $size = 40;  // ← CAMBIADO: de 200 a 80 (puedes usar 60 si quieres más pequeño)
+        $size = 15;  // ← CAMBIADO: de 200 a 80 (puedes usar 60 si quieres más pequeño)
 
         // 2. Redimensionar
         $square = imagecreatetruecolor($size, $size);
