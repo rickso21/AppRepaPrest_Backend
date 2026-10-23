@@ -2163,10 +2163,19 @@ if (!function_exists('comment_log_error')) {
 // ============================================================
 
 if (!function_exists('user_generar_avatar_circular')) {
+    /**
+     * Genera un PNG circular con transparencia en las esquinas.
+     * Compatible con Intervention Image v3 (que eliminó el método mask()).
+     * Usa GD nativo para aplicar la máscara circular.
+     *
+     * @param string $avatarPath Ruta relativa (ej: "users/avatars/abc.jpg")
+     * @return string|null Ruta relativa del PNG (ej: "users/avatars/abc_circular.png")
+     */
     function user_generar_avatar_circular(string $avatarPath): ?string
     {
         try {
             $fullPath = storage_path('app/public/' . $avatarPath);
+
             if (!file_exists($fullPath)) {
                 \Log::warning('[avatar-circular] Archivo no existe', ['path' => $fullPath]);
                 return null;
@@ -2180,33 +2189,61 @@ if (!function_exists('user_generar_avatar_circular')) {
                 mkdir(dirname($circularFull), 0755, true);
             }
 
-            // 1. Configurar el manager de v3
-            $manager = new \Intervention\Image\ImageManager(
-                new \Intervention\Image\Drivers\Gd\Driver()
+            // 1. Leer imagen original con GD
+            $source = @imagecreatefromstring(file_get_contents($fullPath));
+            if (!$source) {
+                throw new \Exception('No se pudo leer la imagen con GD (formato no soportado)');
+            }
+
+            $size = 200;
+
+            // 2. Redimensionar a 200x200 (cuadrado)
+            $square = imagecreatetruecolor($size, $size);
+            imagealphablending($square, false);
+            imagesavealpha($square, true);
+            imagecopyresampled(
+                $square, $source,
+                0, 0, 0, 0,
+                $size, $size,
+                imagesx($source), imagesy($source)
             );
+            imagedestroy($source);
 
-            // 2. Leer y redimensionar el avatar
-            $image = $manager->read($fullPath)->cover(200, 200);
+            // 3. Crear canvas circular transparente
+            $circular = imagecreatetruecolor($size, $size);
+            imagealphablending($circular, false);
+            imagesavealpha($circular, true);
+            $transparent = imagecolorallocatealpha($circular, 0, 0, 0, 127);
+            imagefill($circular, 0, 0, $transparent);
 
-            // 3. Crear la máscara circular (círculo blanco sobre fondo transparente)
-            $mask = $manager->create(200, 200)->fill('transparent');
-            $mask->drawCircle(100, 100, function ($circle) {
-                $circle->radius(100);
-                $circle->background('white');
-            });
+            // 4. Copiar solo los píxeles dentro del círculo
+            $center = $size / 2;
+            $radius = $size / 2;
+            for ($x = 0; $x < $size; $x++) {
+                for ($y = 0; $y < $size; $y++) {
+                    $dist = sqrt(pow($x - $center, 2) + pow($y - $center, 2));
+                    if ($dist <= $radius) {
+                        $color = imagecolorat($square, $x, $y);
+                        imagesetpixel($circular, $x, $y, $color);
+                    }
+                }
+            }
+            imagedestroy($square);
 
-            // 4. Aplicar la máscara usando el paquete externo
-            $masked = $image->modify(
-                new \DialloIbrahima\InterventionMask\ApplyMask($mask)
-            );
+            // 5. Guardar como PNG
+            imagepng($circular, $circularFull);
+            imagedestroy($circular);
 
-            // 5. Guardar como PNG (con transparencia)
-            $masked->toPng()->save($circularFull);
+            \Log::info('[avatar-circular] PNG generado', [
+                'source' => $avatarPath,
+                'output' => $circularRelative,
+                'size'   => filesize($circularFull),
+            ]);
 
             return $circularRelative;
         } catch (\Throwable $e) {
             \Log::error('[avatar-circular] Error: ' . $e->getMessage(), [
-                'path' => $avatarPath,
+                'path'  => $avatarPath,
                 'trace' => $e->getTraceAsString(),
             ]);
             return null;
