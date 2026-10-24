@@ -13,7 +13,10 @@ use App\Events\PostCreated;
 use App\Events\CommentCreated;
 use App\Listeners\NotificarNuevaPublicacion;
 use App\Listeners\NotificarNuevoComentario;
-
+use App\Events\PrestamoSolicitado;
+use App\Events\PrestamoActualizado;
+use App\Listeners\NotificarPrestamoSolicitado;
+use App\Listeners\NotificarPrestamoActualizado;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Events\Failed;
