@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\PostCreated;
 use App\Models\User;
+use App\Models\Grupo;
 use App\Services\PushNotificationService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -32,11 +33,14 @@ class NotificarNuevaPublicacion
             if (!$autor) return;
 
             // Miembros del grupo (activos, con token, excepto el autor)
-            $destinatarios = User::where('grupo_id', $post->group_id)
-                ->where('status_id', 1)
-                ->whereNotNull('expo_push_token')
-                ->where('id', '!=', $autor->id)
-                ->get();
+            $grupoPrincipalId = Grupo::canalPrincipalDe((int) $post->group_id);
+$gruposVisibles   = Grupo::gruposVisiblesDe($grupoPrincipalId);
+
+$destinatarios = User::whereIn('grupo_id', $gruposVisibles)
+    ->where('status_id', 1)
+    ->whereNotNull('expo_push_token')
+    ->where('id', '!=', $autor->id)
+    ->get();
 
             Log::info('[push.publicacion] Destinatarios encontrados', [
                 'total'  => $destinatarios->count(),
