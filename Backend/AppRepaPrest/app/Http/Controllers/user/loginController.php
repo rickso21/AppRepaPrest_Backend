@@ -229,21 +229,33 @@ class loginController extends Controller
 
 // AUTENTICACIÓN
     public function logout(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        if ($response = user_validate_auth($user)) {
-            return $response;
-        }
-
-        // 1) Desconectar del mapa + desactivar ubicación
-        repartidor_desconectar_usuario($user->id, 'logout');
-
-        // 2) Revocar SOLO el token actual (no todas las sesiones)
-        $request->user()->currentAccessToken()->delete();
-
-        return user_success_response('Sesión cerrada correctamente');
+    if ($response = user_validate_auth($user)) {
+        return $response;
     }
+
+    repartidor_desconectar_usuario($user->id, 'logout');
+
+    // ─── NUEVO: emitir WebSocket para que el mapa se actualice en vivo ───
+    if ($user->grupo_id) {
+        try {
+            event(new \App\Events\EstadoCambiado(
+                (int) $user->grupo_id,
+                (int) $user->id,
+                'desconectado'
+            ));
+        } catch (\Throwable $e) {
+            Log::error('Broadcast logout falló: ' . $e->getMessage());
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
+    $request->user()->currentAccessToken()->delete();
+
+    return user_success_response('Sesión cerrada correctamente');
+}
 
     // PERFIL DEL USUARIO
 
