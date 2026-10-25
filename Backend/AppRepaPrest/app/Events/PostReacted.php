@@ -16,7 +16,7 @@ class PostReacted implements ShouldBroadcastNow
     public function __construct(
         public Post $post,
         public int $userId,
-        public string $tipoFinal,
+        public ?string $tipoFinal,
         public string $accion,
         public ?string $tipoAnterior = null,
     ) {
