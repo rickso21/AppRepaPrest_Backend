@@ -33,24 +33,14 @@ class PostReacted implements ShouldBroadcastNow
         $this->tipoAnterior = $tipoAnterior;
     }
 
-     public function broadcastOn(): array
+    public function broadcastOn(): array
     {
-        $groupId = $this->groupId ?: (int) Post::find($this->postId)?->group_id;
-        $canalId = \App\Models\Grupo::canalPrincipalDe($groupId);
+        $groupId = Post::find($this->postId)?->group_id;
 
-        $canales = [];
-
-        if ($groupId) {
-            $canales[] = new PrivateChannel('group.' . $groupId);
-        }
-
-        if ($canalId && $canalId !== $groupId) {
-            $canales[] = new PrivateChannel('group.' . $canalId);
-        }
-
-        return $canales;
+        return [
+            new PrivateChannel('group.' . $groupId),
+        ];
     }
-
 
     /**
      * ✅ Nombre del evento con namespace (obligatorio para Pusher-js + Reverb).
