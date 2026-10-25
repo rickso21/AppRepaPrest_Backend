@@ -13,40 +13,29 @@ class PostReacted implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $postId;
-    public $userId;
-    public $type;
-    public $accion;
-    public $tipoAnterior;
-
     public function __construct(
-        Post $post,
-        int $userId,
-        ?string $type,
-        string $accion,
-        ?string $tipoAnterior = null
+        public Post $post,
+        public int $userId,
+        public ?string $tipoFinal,
+        public string $accion,
+        public ?string $tipoAnterior = null,
     ) {
-        $this->postId       = $post->id;
-        $this->userId       = $userId;
-        $this->type         = $type;
-        $this->accion       = $accion;
-        $this->tipoAnterior = $tipoAnterior;
     }
 
     public function broadcastOn(): array
     {
-        $groupId = Post::find($this->postId)?->group_id;
+        $groupId = (int) $this->post->group_id;
+        $canalId = \App\Models\Grupo::canalPrincipalDe($groupId);
 
-        return [
-            new PrivateChannel('group.' . $groupId),
-        ];
+        $canales = [new PrivateChannel('group.' . $groupId)];
+
+        if ($canalId && $canalId !== $groupId) {
+            $canales[] = new PrivateChannel('group.' . $canalId);
+        }
+
+        return $canales;
     }
 
-    /**
-     * ✅ Nombre del evento con namespace (obligatorio para Pusher-js + Reverb).
-     * Pusher-js SOLO reconoce eventos de aplicación si empiezan con punto.
-     * El `.` se agrega implícitamente al bindear en el cliente.
-     */
     public function broadcastAs(): string
     {
         return 'post.reacted';
@@ -55,11 +44,13 @@ class PostReacted implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'postId'       => $this->postId,
-            'userId'       => $this->userId,
-            'type'         => $this->type,
-            'accion'       => $this->accion,
-            'tipoAnterior' => $this->tipoAnterior,
+            'post_id'       => $this->post->id,
+            'user_id'       => $this->userId,
+            'tipo_final'    => $this->tipoFinal,
+            'accion'        => $this->accion,
+            'tipo_anterior' => $this->tipoAnterior,
+            'group_id'      => $this->post->group_id,
+            'created_at'    => now()->toISOString(),
         ];
     }
 }
