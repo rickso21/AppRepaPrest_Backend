@@ -9,12 +9,17 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class PostCreated implements ShouldBroadcastNow
+class PostReacted implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Post $post)
-    {
+    public function __construct(
+        public Post $post,
+        public int $userId,
+        public string $tipoFinal,
+        public string $accion,
+        public ?string $tipoAnterior = null,
+    ) {
     }
 
     public function broadcastOn(): array
@@ -33,18 +38,19 @@ class PostCreated implements ShouldBroadcastNow
 
     public function broadcastAs(): string
     {
-        return 'post.created';
+        return 'post.reacted';
     }
 
     public function broadcastWith(): array
     {
         return [
-            'id'         => $this->post->id,
-            'post'       => $this->post->post,
-            'image'      => $this->post->image,
-            'user_id'    => $this->post->user_id,
-            'group_id'   => $this->post->group_id,
-            'created_at' => $this->post->created_at?->toISOString(),
+            'post_id'       => $this->post->id,
+            'user_id'       => $this->userId,
+            'tipo_final'    => $this->tipoFinal,
+            'accion'        => $this->accion,       // 'added' | 'removed' | 'changed'
+            'tipo_anterior' => $this->tipoAnterior,
+            'group_id'      => $this->post->group_id,
+            'created_at'    => now()->toISOString(),
         ];
     }
 }
