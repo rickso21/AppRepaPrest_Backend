@@ -215,6 +215,8 @@ class loginController extends Controller
 
         $tokenData = user_crear_token($user);
 
+        repartidor_desconectar_usuario($user->id, 'login reset');
+
         return response()->json([
             'res'        => true,
             'token'      => $tokenData['token'],
@@ -223,6 +225,24 @@ class loginController extends Controller
             'msg'        => numeroAleatorio(1, 10),
             'user'       => user_formatear_login($user),
         ], 200);
+    }
+
+// AUTENTICACIÓN
+    public function logout(Request $request)
+    {
+        $user = $request->user();
+
+        if ($response = user_validate_auth($user)) {
+            return $response;
+        }
+
+        // 1) Desconectar del mapa + desactivar ubicación
+        repartidor_desconectar_usuario($user->id, 'logout');
+
+        // 2) Revocar SOLO el token actual (no todas las sesiones)
+        $request->user()->currentAccessToken()->delete();
+
+        return user_success_response('Sesión cerrada correctamente');
     }
 
     // PERFIL DEL USUARIO
@@ -395,6 +415,10 @@ class loginController extends Controller
         try {
             DB::beginTransaction();
 
+
+            repartidor_desconectar_usuario($user->id, 'cuenta_inhabilitada');
+
+
             $user->status_id = user_status_inactivo();
             $user->save();
 
@@ -485,6 +509,7 @@ class loginController extends Controller
     if ($response = user_validate_auth($user)) {
         return $response;
     }
+
 
     $request->validate([
         'expo_push_token' => 'required|string|max:255',

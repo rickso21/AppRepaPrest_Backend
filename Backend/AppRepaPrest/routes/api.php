@@ -44,7 +44,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user/{id}', [loginController::class, 'show_user']);
     Route::post('/user/push-token', [loginController::class, 'savePushToken']);
     Route::delete('/user/push-token', [loginController::class, 'deletePushToken']);
-Route::post('/user/push-token/remove', [loginController::class, 'deletePushToken']);
+    Route::post('/user/push-token/remove', [loginController::class, 'deletePushToken']);
+    Route::post('/logout', [loginController::class, 'logout']);
+
+
     // solicita prestamo
     Route::get('/solicita-user', [prestamoController::class, 'solicitar_credito']);
     // 2. Generar opciones de préstamo y crear solicitud

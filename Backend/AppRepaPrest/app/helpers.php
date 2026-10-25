@@ -2273,4 +2273,145 @@ if (!function_exists('user_eliminar_avatar_circular')) {
             @unlink($fullPath);
         }
     }
+
+    if (!function_exists('user_status_activo'))   { function user_status_activo()   { return 1; } }
+if (!function_exists('user_status_inactivo')) { function user_status_inactivo() { return 2; } }
+
+// ---------- REPARTIDORES (mapa) ----------
+
+if (!function_exists('repartidor_timeout_minutos')) {
+    /**
+     * Minutos sin reportar ubicación antes de auto-desconectar.
+     * 10 horas = 600 minutos.
+     */
+    function repartidor_timeout_minutos(): int
+    {
+        return (int) env('REPARTIDOR_TIMEOUT_MIN', 600);
+    }
+}
+
+if (!function_exists('repartidor_limite_inactividad')) {
+    /**
+     * Carbon con el límite: cualquier ultima_actualizacion anterior a esto
+     * se considera inactividad.
+     */
+    function repartidor_limite_inactividad(): \Carbon\Carbon
+    {
+        return now()->subMinutes(repartidor_timeout_minutos());
+    }
+}
+
+if (!function_exists('repartidor_desconectar_inactivos')) {
+    /**
+     * Marca como desconectados a los repartidores que llevan más de
+     * repartidor_timeout_minutos() sin actualizar ubicación.
+     *
+     * - $grupoId = null  → barre TODA la tabla (cron).
+     * - $grupoId = valor → solo ese grupo (General_location).
+     *
+     * Devuelve el número de repartidores afectados.
+     */
+    function repartidor_desconectar_inactivos(?int $grupoId = null): int
+    {
+        $limite = repartidor_limite_inactividad();
+
+        $query = \App\Models\EstadoRepartidor::where('estado', 'conectado')
+            ->where(function ($q) use ($limite) {
+                $q->whereNull('ultima_actualizacion')
+                  ->orWhere('ultima_actualizacion', '<', $limite);
+            });
+
+        if ($grupoId !== null) {
+            $query->whereIn(
+                'usuario_id',
+                \App\Models\User::where('grupo_id', $grupoId)->pluck('id')
+            );
+        }
+
+        $ids = (clone $query)->pluck('usuario_id');
+
+        if ($ids->isEmpty()) {
+            return 0;
+        }
+
+        \App\Models\EstadoRepartidor::whereIn('usuario_id', $ids)
+            ->update([
+                'estado'               => 'desconectado',
+                'ultima_actualizacion' => now(),
+            ]);
+
+        \App\Models\Ubicacion::whereIn('usuario_id', $ids)
+            ->update(['es_activa' => false]);
+
+        \Log::info('[repartidor] Auto-desconectados por inactividad', [
+            'total'    => $ids->count(),
+            'ids'      => $ids->all(),
+            'limite'   => $limite->toDateTimeString(),
+            'grupo_id' => $grupoId,
+        ]);
+
+        return $ids->count();
+    }
+}
+
+if (!function_exists('repartidor_desconectar_usuario')) {
+    /**
+     * Desconecta a UN usuario explícitamente.
+     * Usar en logout, delete_account, o cuando el frontend llama UserStatus('desconectado').
+     */
+    function repartidor_desconectar_usuario(int $userId, string $motivo = 'manual'): void
+    {
+        \App\Models\EstadoRepartidor::updateOrCreate(
+            ['usuario_id' => $userId],
+            [
+                'estado'               => 'desconectado',
+                'ultima_actualizacion' => now(),
+            ]
+        );
+
+        \App\Models\Ubicacion::where('usuario_id', $userId)
+            ->update(['es_activa' => false]);
+
+        \Log::info('[repartidor] Usuario desconectado', [
+            'usuario_id' => $userId,
+            'motivo'     => $motivo,
+        ]);
+    }
+}
+
+if (!function_exists('repartidor_marcar_conectado')) {
+    /**
+     * Marca al usuario como conectado y refresca ultima_actualizacion.
+     * Se llama desde Current_location() al recibir coordenadas válidas.
+     */
+    function repartidor_marcar_conectado(int $userId): void
+    {
+        \App\Models\EstadoRepartidor::updateOrCreate(
+            ['usuario_id' => $userId],
+            [
+                'estado'               => 'conectado',
+                'ultima_actualizacion' => now(),
+            ]
+        );
+    }
+}
+
+if (!function_exists('repartidor_esta_activo')) {
+    /**
+     * true si su ultima_actualizacion está dentro del timeout.
+     */
+    function repartidor_esta_activo(?\App\Models\EstadoRepartidor $estado): bool
+    {
+        if (!$estado || $estado->estado !== 'conectado') {
+            return false;
+        }
+
+        if (!$estado->ultima_actualizacion) {
+            return false;
+        }
+
+        return \Carbon\Carbon::parse($estado->ultima_actualizacion)
+            ->gte(repartidor_limite_inactividad());
+    }
+}
 }

@@ -41,10 +41,15 @@ class MapaController extends Controller
                 ]
             );
 
+            /*
             $estadoActual = EstadoRepartidor::updateOrCreate(
                 ['usuario_id' => $user->id],
                 ['ultima_actualizacion' => now()]
             );
+            */
+
+            repartidor_marcar_conectado($user->id);
+            $estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
 
             // WebSocket: avisa a los miembros del grupo
             if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
@@ -88,11 +93,15 @@ class MapaController extends Controller
         try {
             $user = $request->user();
 
+
+             repartidor_desconectar_inactivos($user->grupo_id);
+
             $repartidores = DB::table('tbl_user as u')
                 ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
                 ->leftJoin('tbl_ubicaciones as ub', function ($join) {
                     $join->on('u.id', '=', 'ub.usuario_id')
-                         ->where('ub.es_activa', '=', 1);
+                         ->where('ub.es_activa', '=', 1)
+                         ->where('ub.created_at', '>=', repartidor_limite_inactividad());
                 })
                 ->leftJoin('tbl_alertas_panico as ap', function ($join) {
                     $join->on('u.id', '=', 'ap.usuario_id')
@@ -175,7 +184,8 @@ class MapaController extends Controller
                 ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
                 ->leftJoin('tbl_ubicaciones as ub', function ($join) {
                     $join->on('u.id', '=', 'ub.usuario_id')
-                         ->where('ub.es_activa', '=', 1);
+                         ->where('ub.es_activa', '=', 1)
+                         ->where('ub.created_at', '>=', repartidor_limite_inactividad());
                 })
                 ->where('u.id', '=', $id)
                 ->where('u.status_id', 1)
@@ -242,6 +252,8 @@ class MapaController extends Controller
 
             $estadoDB = $request->estado;
 
+
+            /*
             EstadoRepartidor::updateOrCreate(
                 ['usuario_id' => $user->id],
                 [
@@ -249,12 +261,15 @@ class MapaController extends Controller
                     'ultima_actualizacion' => now(),
                 ]
             );
+            */
 
-            if ($estadoDB === 'desconectado') {
-                Ubicacion::where('usuario_id', $user->id)->update(['es_activa' => false]);
+           if ($estadoDB === 'desconectado') {
+        repartidor_desconectar_usuario($user->id, 'UserStatus manual'); // setea estado + es_activa=false
             } else {
+                repartidor_marcar_conectado($user->id);                          // setea estado + timestamp
                 Ubicacion::where('usuario_id', $user->id)->update(['es_activa' => true]);
             }
+            // ──────────────────────────────────
 
             if ($user->grupo_id) {
                 $this->emitir(new EstadoCambiado((int) $user->grupo_id, (int) $user->id, $estadoDB));
