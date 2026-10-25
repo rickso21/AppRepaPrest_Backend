@@ -23,11 +23,17 @@ class PostDeleted implements ShouldBroadcastNow
         $this->userId  = $userId;
     }
 
-    public function broadcastOn(): array
+     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('group.' . $this->groupId),
-        ];
+        $canalId = \App\Models\Grupo::canalPrincipalDe($this->groupId);
+
+        $canales = [new PrivateChannel('group.' . $this->groupId)];
+
+        if ($canalId && $canalId !== $this->groupId) {
+            $canales[] = new PrivateChannel('group.' . $canalId);
+        }
+
+        return $canales;
     }
 
     public function broadcastAs(): string

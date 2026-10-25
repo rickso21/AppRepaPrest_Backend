@@ -22,6 +22,12 @@ class PostCreated implements ShouldBroadcastNow
         $canalId = \App\Models\Grupo::canalPrincipalDe((int) $this->post->group_id);
 
         return [new PrivateChannel('group.' . $canalId)];
+
+        if ($canalId && $canalId !== $groupId) {
+            $canales[] = new PrivateChannel('group.' . $canalId);
+        }
+
+        return $canales;
     }
 
     public function broadcastAs(): string

@@ -22,10 +22,22 @@ class CommentCreated implements ShouldBroadcastNow
         $groupId = $this->comment->post?->group_id;
         $canalId = \App\Models\Grupo::canalPrincipalDe((int) $groupId);
 
-        return [
-            new PrivateChannel('group.' . $canalId),
-            new PrivateChannel('global'),
-        ];
+        $canales = [];
+
+        // Canal del grupo real del post (emergencia / monitoreo / principal)
+        if ($groupId) {
+            $canales[] = new PrivateChannel('group.' . $groupId);
+        }
+
+        // Canal principal (para que el principal reciba también lo de sus secundarios)
+        if ($canalId && $canalId !== $groupId) {
+            $canales[] = new PrivateChannel('group.' . $canalId);
+        }
+
+        // Canal global (lo que ya tenías)
+        $canales[] = new PrivateChannel('global');
+
+        return $canales;
     }
 
     public function broadcastAs(): string
