@@ -13,7 +13,7 @@ use App\Http\Controllers\comunidad\publicacionController;
 use App\Http\Controllers\comunidad\commentController;
 use App\Http\Controllers\comunidad\AdController;
 use App\Http\Controllers\contacto\ContactoController;
-
+use App\Http\Controllers\comunidad\SubscriptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
