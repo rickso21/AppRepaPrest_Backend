@@ -13,7 +13,7 @@ use App\Http\Controllers\comunidad\publicacionController;
 use App\Http\Controllers\comunidad\commentController;
 use App\Http\Controllers\comunidad\AdController;
 use App\Http\Controllers\contacto\ContactoController;
-use App\Http\Controllers\comunidad\SubscriptionController;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -26,14 +26,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/create', [AdController::class, 'create']);
         Route::post('/{id}/pay', [AdController::class, 'pay']);
         Route::get('/{id}/payment-status', [AdController::class, 'paymentStatus']);
-        Route::post('/subscription/redeem', [SubscriptionController::class, 'redeem']);
-        Route::post('/subscription/renew',  [SubscriptionController::class, 'renew']);
-        Route::get('/subscription/status',  [SubscriptionController::class, 'status']);
-        Route::get('/subscription/available-coupons', [SubscriptionController::class, 'availableCoupons']);
 
 
         Route::post('/{id}/impression', [AdController::class, 'impression']);
         Route::post('/{id}/click', [AdController::class, 'click']);
+    });
+
+    // RUTAS DE SUSCRIPCIÓN
+    Route::prefix('subscription')->group(function () {
+        Route::post('/redeem', [SubscriptionController::class, 'redeem']);
+        Route::post('/renew',  [SubscriptionController::class, 'renew']);
+        Route::get('/status',  [SubscriptionController::class, 'status']);
+        Route::get('/available-coupons', [SubscriptionController::class, 'availableCoupons']);
     });
 
     // 1. Actualizar ubicación (cada 3-5 segundos)
