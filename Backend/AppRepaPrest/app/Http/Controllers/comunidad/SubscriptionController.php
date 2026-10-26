@@ -47,7 +47,7 @@ class SubscriptionController extends Controller
                AND status = 1
                AND used_count < max_uses
              LIMIT 1',
-            [$couponCode]
+             [$couponCode, 'subscription']
         );
 
         if (!$cupon) {
@@ -344,20 +344,28 @@ class SubscriptionController extends Controller
         $user = $request->user();
         if (!$user) return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
 
-        // Buscamos cupones activos, vigentes y con usos disponibles
-        $cupones = DB::select(
-            'SELECT code, plan, valid_until
-             FROM tbl_coupons
-             WHERE status = 1
-               AND (expires_at IS NULL OR expires_at > NOW())
-               AND used_count < max_uses
-             ORDER BY created_at DESC'
-        );
+        try {
+            // Buscamos SOLO los cupones de tipo suscripción, activos y con usos
+            $cupones = DB::select(
+                'SELECT code, type, plan, valid_until
+                 FROM tbl_coupons
+                 WHERE status = 1
+                   AND type = ?
+                   AND used_count < max_uses
+                 ORDER BY id DESC',
+                ['subscription']
+            );
 
-        // Si es un array vacío, simplemente devolvemos res: true y el array vacío.
-        return response()->json([
-            'res'     => true,
-            'coupons' => $cupones
-        ]);
+            return response()->json([
+                'res'     => true,
+                'coupons' => $cupones
+            ]);
+        } catch (\Throwable $th) {
+            \Log::error('[availableCoupons] Error SQL: ' . $th->getMessage());
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al consultar cupones en la BD'
+            ], 500);
+        }
     }
 }
