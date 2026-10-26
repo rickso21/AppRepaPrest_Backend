@@ -137,7 +137,7 @@ class SubscriptionController extends Controller
     // ================================================================
     // POST /subscription/renew — pago mensual $120 vía MercadoPago
     // ================================================================
-      public function renew(Request $request)
+        public function renew(Request $request)
     {
         $user = $request->user();
 
@@ -240,19 +240,20 @@ class SubscriptionController extends Controller
 
             // 4. GUARDAR O ACTUALIZAR EN LA BASE DE DATOS
             if ($pending) {
-                // 🔑 4A. SI YA EXISTE → ACTUALIZAMOS LA PREFERENCIA Y FECHAS
+                // 🔑 4A. SI YA EXISTE → ACTUALIZAMOS LA PREFERENCIA, INIT_POINT Y FECHAS
                 DB::update(
                     'UPDATE tbl_subscriptions
                      SET preference_id = ?,
+                         init_point = ?,
                          starts_at = NOW(),
                          expires_at = DATE_ADD(NOW(), INTERVAL ? DAY),
                          updated_at = NOW()
                      WHERE id = ?',
                     [
-                        $data['id'],
-                        $data['init_point'],
-                        self::MONTHLY_DAYS,
-                        $pending->id,
+                        $data['id'],          // ? preference_id
+                        $data['init_point'],  // ? init_point
+                        self::MONTHLY_DAYS,   // ? INTERVAL DAY
+                        $pending->id,         // ? WHERE id
                     ]
                 );
 
@@ -263,16 +264,16 @@ class SubscriptionController extends Controller
                 // 🔑 4B. SI NO EXISTE → INSERTAMOS UNA NUEVA SOLICITUD
                 DB::insert(
                     'INSERT INTO tbl_subscriptions
-                     (user_id, plan, status, price_mxn, preference_id, starts_at, expires_at, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), NOW(), NOW())',
+                     (user_id, plan, status, price_mxn, preference_id, init_point, starts_at, expires_at, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), NOW(), NOW())',
                     [
-                        $user->id,
-                        'monthly_paid',
-                        'pending_payment',
-                        self::MONTHLY_PRICE_MXN,
-                        $data['id'],
-                         $data['init_point'],
-                        self::MONTHLY_DAYS,
+                        $user->id,             // ? user_id
+                        'monthly_paid',        // ? plan
+                        'pending_payment',     // ? status
+                        self::MONTHLY_PRICE_MXN, // ? price_mxn
+                        $data['id'],           // ? preference_id
+                        $data['init_point'],   // ? init_point
+                        self::MONTHLY_DAYS,    // ? INTERVAL DAY
                     ]
                 );
 
