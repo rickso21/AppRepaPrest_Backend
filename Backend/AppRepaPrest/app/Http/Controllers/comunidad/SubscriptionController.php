@@ -250,6 +250,7 @@ class SubscriptionController extends Controller
                      WHERE id = ?',
                     [
                         $data['id'],
+                        $data['init_point'],
                         self::MONTHLY_DAYS,
                         $pending->id,
                     ]
@@ -270,6 +271,7 @@ class SubscriptionController extends Controller
                         'pending_payment',
                         self::MONTHLY_PRICE_MXN,
                         $data['id'],
+                         $data['init_point'],
                         self::MONTHLY_DAYS,
                     ]
                 );
@@ -303,9 +305,11 @@ class SubscriptionController extends Controller
    public function status(Request $request)
 {
     $user = $request->user();
-    if (!$user) return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+    if (!$user) {
+        return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+    }
 
-    // Limpieza: marcar como 'expired' las que ya vencieron
+    // 1. Limpieza: marcar como 'expired' las que ya vencieron
     DB::update(
         'UPDATE tbl_subscriptions
          SET status = ?, updated_at = NOW()
@@ -313,9 +317,9 @@ class SubscriptionController extends Controller
         ['expired', $user->id, 'active']
     );
 
-    //Buscar si hay un pending_payment activo (para informar al front)
+    // 2. Buscar si hay un pending_payment activo (para informar al front)
     $pending = DB::selectOne(
-        'SELECT id, preference_id, created_at
+        'SELECT id, preference_id, init_point, created_at
          FROM tbl_subscriptions
          WHERE user_id = ? AND status = ?
          ORDER BY id DESC LIMIT 1',
@@ -324,11 +328,12 @@ class SubscriptionController extends Controller
 
     $payload = Subscription::statusPayloadForUser($user->id);
 
-    // Añadir info extra al payload
+    // 3. Añadir info extra al payload si hay un pago pendiente
     if ($pending) {
         $payload['pending'] = [
             'id'            => $pending->id,
             'preference_id' => $pending->preference_id,
+            'init_point'    => $pending->init_point,
             'created_at'    => $pending->created_at,
         ];
     }
