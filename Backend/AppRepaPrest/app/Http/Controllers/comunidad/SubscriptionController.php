@@ -318,7 +318,7 @@ class SubscriptionController extends Controller
         ['expired', $user->id, 'active']
     );
 
-    // 2. Buscar si hay un pending_payment activo (para informar al front)
+    // 2. Buscar si hay un pending_payment activo
     $pending = DB::selectOne(
         'SELECT id, preference_id, init_point, created_at
          FROM tbl_subscriptions
@@ -327,15 +327,34 @@ class SubscriptionController extends Controller
         [$user->id, 'pending_payment']
     );
 
+    // 🔑 3. Buscar si el último intento fue cancelado/rechazado
+    $rejected = DB::selectOne(
+        'SELECT id, preference_id, init_point, created_at
+         FROM tbl_subscriptions
+         WHERE user_id = ? AND status = ?
+         ORDER BY id DESC LIMIT 1',
+        [$user->id, 'cancelled']
+    );
+
     $payload = Subscription::statusPayloadForUser($user->id);
 
-    // 3. Añadir info extra al payload si hay un pago pendiente
+    // 4. Añadir info extra si hay pago pendiente
     if ($pending) {
         $payload['pending'] = [
             'id'            => $pending->id,
             'preference_id' => $pending->preference_id,
             'init_point'    => $pending->init_point,
             'created_at'    => $pending->created_at,
+        ];
+    }
+
+    // 🔑 5. Añadir info si el último pago fue rechazado
+    if ($rejected && !$payload['is_active']) {
+        $payload['rejected'] = [
+            'id'            => $rejected->id,
+            'preference_id' => $rejected->preference_id,
+            'init_point'    => $rejected->init_point,
+            'created_at'    => $rejected->created_at,
         ];
     }
 
