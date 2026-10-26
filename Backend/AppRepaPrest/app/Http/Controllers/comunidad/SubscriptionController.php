@@ -18,7 +18,7 @@ class SubscriptionController extends Controller
     // ================================================================
     // POST /subscription/redeem  — canjea el cupón anual gratuito
     // ================================================================
-    public function redeem(Request $request)
+      public function redeem(Request $request)
     {
         $user = $request->user();
 
@@ -45,9 +45,10 @@ class SubscriptionController extends Controller
             'SELECT * FROM tbl_coupons
              WHERE code = ?
                AND status = 1
+               AND type = ?
                AND used_count < max_uses
              LIMIT 1',
-             [$couponCode, 'subscription']
+            [$couponCode, 'subscription'] // ✅ 2 tokens, 2 parámetros
         );
 
         if (!$cupon) {
@@ -76,7 +77,7 @@ class SubscriptionController extends Controller
             ], 422);
         }
 
-        // 4. Verificar que este usuario no haya usado este cupón (aunque haya expirado)
+        // 4. Verificar que este usuario no haya usado este cupón
         $alreadyUsedByUser = DB::selectOne(
             'SELECT id FROM tbl_subscriptions WHERE user_id = ? AND coupon_code = ? LIMIT 1',
             [$user->id, $couponCode]
@@ -104,8 +105,8 @@ class SubscriptionController extends Controller
                     'active',
                     0,
                     $couponCode,
-                    $cupon->valid_from, // 🔑 Fecha desde
-                    $cupon->valid_until, // 🔑 Fecha hasta
+                    $cupon->valid_from,
+                    $cupon->valid_until,
                 ]
             );
 
