@@ -16,62 +16,83 @@ class publicacionController extends Controller
 {
     // LISTADO
     public function index(Request $request)
-    {
-        $user_token = $request->user();
+{
+    $user_token = $request->user();
 
-        if ($response = post_validate_auth($user_token)) {
-            return $response;
+    if ($response = post_validate_auth($user_token)) {
+        return $response;
+    }
+
+    $scope = post_normalizar_scope($request->input('scope', 'group'));
+
+    $query = Post::with([
+            'user',
+            'comments' => fn($q) => $q->where('activo', 1)->with('user'),
+            'reactions',
+        ])
+        ->where('activo', 1);
+
+    if ($scope === 'group') {
+        $gruposVisibles = post_grupos_visibles_de($user_token);
+        $grupoFiltro    = $request->input('group_id');
+
+        if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
+            $query->where('group_id', (int) $grupoFiltro);
+        } else {
+            $query->whereIn('group_id', $gruposVisibles);
         }
 
-        $scope = post_normalizar_scope($request->input('scope', 'group'));
+        $query->whereHas('user', fn($q) => $q->where('status_id', 1));
+    } else {
+        // 🔑 scope = 'global' → solo posts de grupos principales (públicos)
+        $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
+            ->pluck('id')
+            ->all();
 
-        $query = Post::with([
-                'user',
-                'comments' => fn($q) => $q->where('activo', 1)->with('user'),
-                'reactions',
-            ])
-            ->where('activo', 1);
+        $query->whereIn('group_id', $idsPrincipales)
+            ->whereHas('user', fn($q) => $q->where('status_id', 1));
+    }
 
-        if ($scope === 'group') {
-            $gruposVisibles = post_grupos_visibles_de($user_token);
-            $grupoFiltro    = $request->input('group_id');
+    $perPage = (int) $request->input('per_page', 20);
+    $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-            if ($grupoFiltro && in_array((int) $grupoFiltro, $gruposVisibles, true)) {
-                $query->where('group_id', (int) $grupoFiltro);
-            } else {
-                $query->whereIn('group_id', $gruposVisibles);
+    // 🔑 Base URL para construir rutas de imagen/video/audio en el frontend
+    $baseUrl = rtrim(config('app.url'), '/');
+
+    $publicaciones = collect($posts->items())
+        ->map(function ($post) use ($user_token, $scope, $baseUrl) {
+            $formateado = post_formatear($post, $user_token, $scope);
+
+            // Asegurar que user_data y base_url existan para el scope global
+            if ($scope === 'global') {
+                $formateado['user_data'] = [
+                    'id'         => $post->user?->id,
+                    'nombre'     => $post->user
+                        ? user_nombre_completo($post->user)
+                        : 'Usuario',
+                    'avatar_url' => $post->user?->avatar_url,
+                ];
+                $formateado['base_url'] = $baseUrl;
             }
 
-            $query->whereHas('user', fn($q) => $q->where('status_id', 1));
-        } else {
-            $idsPrincipales = \App\Models\Grupo::where('tipo_grupo', \App\Models\Grupo::TIPO_PRINCIPAL)
-                ->pluck('id')
-                ->all();
+            return $formateado;
+        });
 
-            $query->whereIn('group_id', $idsPrincipales)
-                ->whereHas('user', fn($q) => $q->where('status_id', 1));
-        }
-
-        $perPage = (int) $request->input('per_page', 20);
-        $posts   = $query->orderBy('created_at', 'desc')->paginate($perPage);
-
-        $publicaciones = collect($posts->items())
-            ->map(fn($post) => post_formatear($post, $user_token, $scope));
-
-        return response()->json([
-            'res'           => true,
-            'grupo'         => optional($user_token->grupo)->group_name,
-            'scope'         => $scope,
-            'img_grupo' => $user_token->avatar_url,
-            'publicaciones' => $publicaciones,
-            'pagination'    => [
-                'current_page' => $posts->currentPage(),
-                'last_page'    => $posts->lastPage(),
-                'per_page'     => $posts->perPage(),
-                'total'        => $posts->total(),
-            ],
-        ], 200);
-    }
+    return response()->json([
+        'res'           => true,
+        'grupo'         => optional($user_token->grupo)->group_name,
+        'scope'         => $scope,
+        'img_grupo'     => $user_token->avatar_url,
+        'base_url'      => $baseUrl, // 🔑 siempre se devuelve
+        'publicaciones' => $publicaciones,
+        'pagination'    => [
+            'current_page' => $posts->currentPage(),
+            'last_page'    => $posts->lastPage(),
+            'per_page'     => $posts->perPage(),
+            'total'        => $posts->total(),
+        ],
+    ], 200);
+}
 
     // CREAR
     public function store(savePublishRequest $request)
