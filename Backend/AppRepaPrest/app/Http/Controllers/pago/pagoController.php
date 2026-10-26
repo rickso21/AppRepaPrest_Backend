@@ -165,7 +165,7 @@ class pagoController extends Controller
                             'name'  => $user_token->name ?? 'Cliente',
                             'email' => $user_token->email ?? 'cliente@email.com',
                         ],
-                         'back_urls' => [
+                        'back_urls' => [
                             'success' => "{$frontendUrl}/pago-exitoso",
                             'failure' => "{$frontendUrl}/pago-fallido",
                             'pending' => "{$frontendUrl}/pago-pendiente",
@@ -482,8 +482,10 @@ class pagoController extends Controller
 
 
                 //SERVICIO DE COMERCIO PAGO
+                //SERVICIO DE COMERCIO PAGO Y SUSCRIPCIONES
                 $externalRef = (string) ($pago_mp['external_reference'] ?? '');
 
+                // 1. PAGOS DE ANUNCIOS (TU FLUJO ACTUAL)
                 if (str_starts_with($externalRef, 'ad_')) {
                     \Log::info('[verificar_pago] Detectado pago de ANUNCIO', [
                         'external_reference' => $externalRef,
@@ -498,7 +500,26 @@ class pagoController extends Controller
                         'success' => $resultado['procesado'],
                         'tipo'    => 'anuncio',
                         'status'  => $resultado['status'],
-                        'message' => $resultado['message'],
+                        'message' => $resultado['message'] ?? 'Procesado',
+                    ], 200);
+                }
+
+                // 2. PAGOS DE SUSCRIPCIÓN (NUEVO FLUJO)
+                if (str_starts_with($externalRef, 'sub_')) {
+                    \Log::info('[verificar_pago] Detectado pago de SUSCRIPCIÓN', [
+                        'external_reference' => $externalRef,
+                        'payment_id'         => $payment_id,
+                        'status'             => $status,
+                    ]);
+
+                    $resultado = app(\App\Http\Controllers\comunidad\SubscriptionController::class)
+                        ->procesarPagoDeSuscripcion($pago_mp);
+
+                    return response()->json([
+                        'success' => $resultado['procesado'],
+                        'tipo'    => 'suscripcion',
+                        'status'  => $resultado['status'],
+                        'message' => 'Suscripción procesada',
                     ], 200);
                 }
 

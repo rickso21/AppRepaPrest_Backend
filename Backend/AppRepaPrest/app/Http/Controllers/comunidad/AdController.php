@@ -64,94 +64,95 @@ class AdController extends Controller
     // ================================================================
 
     public function create(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        if (!$user || (int) $user->rol_id !== 4) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'Solo comercios pueden publicar anuncios',
-            ], 403);
-        }
+    if (!$user || (int) $user->rol_id !== 4) {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Solo comercios pueden publicar anuncios',
+        ], 403);
+    }
 
-        $request->validate([
-            'title'   => 'required|string|max:150',
-            'plan_id' => 'required|integer|in:1,2,3',
-        ]);
+    // ✅ VALIDAR SUSCRIPCIÓN ACTIVA
+    $active = \App\Models\Subscription::activeForUser($user->id);
 
-        $linkUrl = trim($request->link_url ?? '');
-        $phone   = trim($request->phone ?? '');
+    if (!$active) {
+        return response()->json([
+            'res'  => false,
+            'code' => 'subscription_required',
+            'msg'  => 'Necesitas una suscripción activa para publicar.',
+            'subscription' => \App\Models\Subscription::statusPayloadForUser($user->id),
+        ], 402); // 402 Payment Required
+    }
 
-        if ($linkUrl === '' && $phone === '') {
-            return response()->json([
-                'res' => false,
-                'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
-            ], 422);
-        }
+    $request->validate([
+        'title' => 'required|string|max:150',
+    ]);
 
-        try {
-            $planId = (int) $request->plan_id;
-            $plan   = self::PLANES[$planId] ?? self::PLANES[1];
+    $linkUrl = trim($request->link_url ?? '');
+    $phone   = trim($request->phone ?? '');
 
-            $ad = new Ad();
-            $ad->merchant_id = $user->id;
-            $ad->group_id    = null;
-            $ad->title       = $request->title;
-            $ad->description = $request->description ?? null;
-            $ad->link_url    = $linkUrl ?: null;
-            $ad->phone       = $phone ?: null;
-            $ad->cta_text    = $request->cta_text ?? 'Ver más';
-            $ad->priority    = 0;
-            $ad->status_id   = 0;
-            $ad->start_at    = null;
-            $ad->end_at      = null;
-            $ad->plan_id     = $planId;
-            $ad->amount_paid = (float) $plan['precio'];
+    if ($linkUrl === '' && $phone === '') {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
+        ], 422);
+    }
 
-            if ($request->hasFile('image')) {
-                $file = $request->file('image');
-                $ext  = $file->getClientOriginalExtension() ?: 'jpg';
-                $name = time() . '_' . $user->id . '.' . $ext;
+    try {
+        $ad = new \App\Models\Ad();
+        $ad->merchant_id = $user->id;
+        $ad->group_id    = null;
+        $ad->title       = $request->title;
+        $ad->description = $request->description ?? null;
+        $ad->link_url    = $linkUrl ?: null;
+        $ad->phone       = $phone ?: null;
+        $ad->cta_text    = $request->cta_text ?? 'Ver más';
+        $ad->priority    = 5;
+        $ad->status_id   = 1;                   // Activo inmediato (sin pago)
+        $ad->start_at    = now();
+        $ad->end_at      = $active->expires_at; // Vence junto con la suscripción
+        $ad->plan_id     = null;
+        $ad->amount_paid = 0;
 
-                if (!file_exists(public_path('img/ads'))) {
-                    mkdir(public_path('img/ads'), 0775, true);
-                }
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $ext  = $file->getClientOriginalExtension() ?: 'jpg';
+            $name = time() . '_' . $user->id . '.' . $ext;
 
-                $file->move(public_path('img/ads'), $name);
-                $ad->image = $name;
+            if (!file_exists(public_path('img/ads'))) {
+                mkdir(public_path('img/ads'), 0775, true);
             }
 
-            $ad->save();
-
-            return response()->json([
-    'res' => true,
-    'msg' => 'Anuncio creado. Procede al pago.',
-    'ad'  => [
-        'id'           => $ad->id,
-        'title'        => $ad->title,
-        'status'       => $ad->status_id,
-        'link_url'     => $ad->link_url,
-        'phone'        => $ad->phone,
-        'whatsapp_url' => $this->whatsappUrlParaAd($ad),
-    ],
-    'next' => [
-        'action' => 'pay',
-        'method' => 'POST',
-        'url'    => "/ads/{$ad->id}/pay",
-        'body'   => ['plan_id' => $planId],
-    ],
-], 201);
-        } catch (\Throwable $th) {
-            \Log::error('[ads.create] Error: ' . $th->getMessage());
-
-            return response()->json([
-                'res' => false,
-                'msg' => config('app.debug')
-                    ? 'Error al crear el anuncio: ' . $th->getMessage()
-                    : 'Error al crear el anuncio',
-            ], 500);
+            $file->move(public_path('img/ads'), $name);
+            $ad->image = $name;
         }
+
+        $ad->save();
+
+        return response()->json([
+            'res' => true,
+            'msg' => 'Anuncio publicado correctamente.',
+            'ad'  => [
+                'id'           => $ad->id,
+                'title'        => $ad->title,
+                'status_id'    => $ad->status_id,
+                'status_text'  => 'Activo',
+                'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+            ],
+        ], 201);
+    } catch (\Throwable $th) {
+        \Log::error('[ads.create] Error: ' . $th->getMessage());
+
+        return response()->json([
+            'res' => false,
+            'msg' => config('app.debug')
+                ? 'Error al crear el anuncio: ' . $th->getMessage()
+                : 'Error al crear el anuncio',
+        ], 500);
     }
+}
 
     // ================================================================
     // PAGAR ANUNCIO
