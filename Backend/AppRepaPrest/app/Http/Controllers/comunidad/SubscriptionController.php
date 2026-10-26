@@ -300,24 +300,44 @@ class SubscriptionController extends Controller
     // ================================================================
     // GET /subscription/status
     // ================================================================
-    public function status(Request $request)
-    {
-        $user = $request->user();
-        if (!$user) return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+   public function status(Request $request)
+{
+    $user = $request->user();
+    if (!$user) return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
 
-        // Limpieza: marcar como 'expired' las que ya vencieron
-        DB::update(
-            'UPDATE tbl_subscriptions
-             SET status = ?, updated_at = NOW()
-             WHERE user_id = ? AND status = ? AND expires_at <= NOW()',
-            ['expired', $user->id, 'active']
-        );
+    // Limpieza: marcar como 'expired' las que ya vencieron
+    DB::update(
+        'UPDATE tbl_subscriptions
+         SET status = ?, updated_at = NOW()
+         WHERE user_id = ? AND status = ? AND expires_at <= NOW()',
+        ['expired', $user->id, 'active']
+    );
 
-        return response()->json([
-            'res'          => true,
-            'subscription' => Subscription::statusPayloadForUser($user->id),
-        ]);
+    //Buscar si hay un pending_payment activo (para informar al front)
+    $pending = DB::selectOne(
+        'SELECT id, preference_id, created_at
+         FROM tbl_subscriptions
+         WHERE user_id = ? AND status = ?
+         ORDER BY id DESC LIMIT 1',
+        [$user->id, 'pending_payment']
+    );
+
+    $payload = Subscription::statusPayloadForUser($user->id);
+
+    // Añadir info extra al payload
+    if ($pending) {
+        $payload['pending'] = [
+            'id'            => $pending->id,
+            'preference_id' => $pending->preference_id,
+            'created_at'    => $pending->created_at,
+        ];
     }
+
+    return response()->json([
+        'res'          => true,
+        'subscription' => $payload,
+    ]);
+}
 
     // ================================================================
     // Webhook: procesa pago "sub_XXX" de MercadoPago
