@@ -612,4 +612,98 @@ class AdController extends Controller
             default => 'Desconocido',
         };
     }
+
+    // ================================================================
+// ACTUALIZAR ANUNCIO
+// ================================================================
+public function update(Request $request, $id)
+{
+    $user = $request->user();
+
+    if (!$user || (int) $user->rol_id !== 4) {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Solo comercios pueden editar anuncios',
+        ], 403);
+    }
+
+    // 1. Buscar el anuncio y verificar propiedad
+    $ad = Ad::where('id', $id)->where('merchant_id', $user->id)->first();
+
+    if (!$ad) {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Anuncio no encontrado',
+        ], 404);
+    }
+
+    // 2. Validaciones
+    $request->validate([
+        'title' => 'required|string|max:150',
+    ]);
+
+    $linkUrl = trim($request->link_url ?? '');
+    $phone   = trim($request->phone ?? '');
+
+    if ($linkUrl === '' && $phone === '') {
+        return response()->json([
+            'res' => false,
+            'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
+        ], 422);
+    }
+
+    try {
+        // 3. Actualizar datos básicos
+        $ad->title       = $request->title;
+        $ad->description = $request->description ?? null;
+        $ad->link_url    = $linkUrl ?: null;
+        $ad->phone       = $phone ?: null;
+        $ad->cta_text    = $request->cta_text ?? 'Ver más';
+
+        // 4. Si viene una imagen nueva, reemplazar
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $ext  = $file->getClientOriginalExtension() ?: 'jpg';
+            $name = time() . '_' . $user->id . '.' . $ext;
+
+            if (!file_exists(public_path('img/ads'))) {
+                mkdir(public_path('img/ads'), 0775, true);
+            }
+
+            // Eliminar imagen anterior si existe
+            if ($ad->image && file_exists(public_path('img/ads/' . $ad->image))) {
+                @unlink(public_path('img/ads/' . $ad->image));
+            }
+
+            $file->move(public_path('img/ads'), $name);
+            $ad->image = $name;
+        }
+
+        $ad->save();
+
+        return response()->json([
+            'res' => true,
+            'msg' => 'Anuncio actualizado correctamente.',
+            'ad'  => [
+                'id'           => $ad->id,
+                'title'        => $ad->title,
+                'description'  => $ad->description,
+                'image_url'    => $ad->image_url,
+                'link_url'     => $ad->link_url,
+                'phone'        => $ad->phone,
+                'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+            ],
+        ], 200);
+
+    } catch (\Throwable $th) {
+        \Log::error('[ads.update] Error: ' . $th->getMessage());
+
+        return response()->json([
+            'res' => false,
+            'msg' => config('app.debug')
+                ? 'Error al actualizar: ' . $th->getMessage()
+                : 'Error al actualizar el anuncio',
+        ], 500);
+    }
+}
 }

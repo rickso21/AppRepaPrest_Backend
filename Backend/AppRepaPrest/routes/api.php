@@ -30,6 +30,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/{id}/impression', [AdController::class, 'impression']);
         Route::post('/{id}/click', [AdController::class, 'click']);
+        Route::match(['put', 'post'], '/{id}/update', [AdController::class, 'update']);
+
     });
 
     // RUTAS DE SUSCRIPCIÓN
