@@ -64,232 +64,183 @@ class AdController extends Controller
     // ================================================================
 
     public function create(Request $request)
-{
-    $user = $request->user();
-
-    if (!$user || (int) $user->rol_id !== 4) {
-        return response()->json([
-            'res' => false,
-            'msg' => 'Solo comercios pueden publicar anuncios',
-        ], 403);
-    }
-
-    // ✅ VALIDAR SUSCRIPCIÓN ACTIVA
-    $active = \App\Models\Subscription::activeForUser($user->id);
-
-    if (!$active) {
-        return response()->json([
-            'res'  => false,
-            'code' => 'subscription_required',
-            'msg'  => 'Necesitas una suscripción activa para publicar.',
-            'subscription' => \App\Models\Subscription::statusPayloadForUser($user->id),
-        ], 402); // 402 Payment Required
-    }
-
-    $request->validate([
-        'title' => 'required|string|max:150',
-    ]);
-
-    $linkUrl = trim($request->link_url ?? '');
-    $phone   = trim($request->phone ?? '');
-
-    if ($linkUrl === '' && $phone === '') {
-        return response()->json([
-            'res' => false,
-            'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
-        ], 422);
-    }
-
-    try {
-        $ad = new \App\Models\Ad();
-        $ad->merchant_id = $user->id;
-        $ad->group_id    = null;
-        $ad->title       = $request->title;
-        $ad->description = $request->description ?? null;
-        $ad->link_url    = $linkUrl ?: null;
-        $ad->phone       = $phone ?: null;
-        $ad->cta_text    = $request->cta_text ?? 'Ver más';
-        $ad->priority    = 5;
-        $ad->status_id   = 1;                   // Activo inmediato (sin pago)
-        $ad->start_at    = now();
-        $ad->end_at      = $active->expires_at; // Vence junto con la suscripción
-        $ad->plan_id     = null;
-        $ad->amount_paid = 0;
-
-        if ($request->hasFile('image')) {
-            $file = $request->file('image');
-            $ext  = $file->getClientOriginalExtension() ?: 'jpg';
-            $name = time() . '_' . $user->id . '.' . $ext;
-
-            if (!file_exists(public_path('img/ads'))) {
-                mkdir(public_path('img/ads'), 0775, true);
-            }
-
-            $file->move(public_path('img/ads'), $name);
-            $ad->image = $name;
-        }
-
-        $ad->save();
-
-        return response()->json([
-            'res' => true,
-            'msg' => 'Anuncio publicado correctamente.',
-            'ad'  => [
-                'id'           => $ad->id,
-                'title'        => $ad->title,
-                'status_id'    => $ad->status_id,
-                'status_text'  => 'Activo',
-                'whatsapp_url' => $this->whatsappUrlParaAd($ad),
-            ],
-        ], 201);
-    } catch (\Throwable $th) {
-        \Log::error('[ads.create] Error: ' . $th->getMessage());
-
-        return response()->json([
-            'res' => false,
-            'msg' => config('app.debug')
-                ? 'Error al crear el anuncio: ' . $th->getMessage()
-                : 'Error al crear el anuncio',
-        ], 500);
-    }
-}
-
-    // ================================================================
-    // PAGAR ANUNCIO
-    // ================================================================
-
-    public function pay(Request $request, $id)
     {
         $user = $request->user();
 
-        if (!$user) {
-            return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+        if (!$user || (int) $user->rol_id !== 4) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Solo comercios pueden publicar anuncios',
+            ], 403);
+        }
+
+        // ✅ VALIDAR SUSCRIPCIÓN ACTIVA
+        $active = \App\Models\Subscription::activeForUser($user->id);
+
+        if (!$active) {
+            return response()->json([
+                'res'  => false,
+                'code' => 'subscription_required',
+                'msg'  => 'Necesitas una suscripción activa para publicar.',
+                'subscription' => \App\Models\Subscription::statusPayloadForUser($user->id),
+            ], 402);
+        }
+
+        $request->validate([
+            'title' => 'required|string|max:150',
+        ]);
+
+        $linkUrl = trim($request->link_url ?? '');
+        $phone   = trim($request->phone ?? '');
+
+        if ($linkUrl === '' && $phone === '') {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
+            ], 422);
+        }
+
+        try {
+            $ad = new \App\Models\Ad();
+            $ad->merchant_id = $user->id;
+            $ad->group_id    = null;
+            $ad->title       = $request->title;
+            $ad->description = $request->description ?? null;
+            $ad->link_url    = $linkUrl ?: null;
+            $ad->phone       = $phone ?: null;
+            $ad->cta_text    = $request->cta_text ?? 'Ver más';
+            $ad->priority    = 5;
+            $ad->status_id   = 1;
+            $ad->start_at    = now();
+            $ad->end_at      = $active->expires_at;
+            $ad->plan_id     = null;
+            $ad->amount_paid = 0;
+
+            if ($request->hasFile('image')) {
+                $file = $request->file('image');
+                $ext  = $file->getClientOriginalExtension() ?: 'jpg';
+                $name = time() . '_' . $user->id . '.' . $ext;
+
+                if (!file_exists(public_path('img/ads'))) {
+                    mkdir(public_path('img/ads'), 0775, true);
+                }
+
+                $file->move(public_path('img/ads'), $name);
+                $ad->image = $name;
+            }
+
+            $ad->save();
+
+            return response()->json([
+                'res' => true,
+                'msg' => 'Anuncio publicado correctamente.',
+                'ad'  => [
+                    'id'           => $ad->id,
+                    'title'        => $ad->title,
+                    'status_id'    => $ad->status_id,
+                    'status_text'  => 'Activo',
+                    'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+                ],
+            ], 201);
+        } catch (\Throwable $th) {
+            \Log::error('[ads.create] Error: ' . $th->getMessage());
+
+            return response()->json([
+                'res' => false,
+                'msg' => config('app.debug')
+                    ? 'Error al crear el anuncio: ' . $th->getMessage()
+                    : 'Error al crear el anuncio',
+            ], 500);
+        }
+    }
+
+    // ================================================================
+    // ACTUALIZAR ANUNCIO
+    // ================================================================
+
+    public function update(Request $request, $id)
+    {
+        $user = $request->user();
+
+        if (!$user || (int) $user->rol_id !== 4) {
+            return response()->json([
+                'res' => false,
+                'msg' => 'Solo comercios pueden editar anuncios',
+            ], 403);
         }
 
         $ad = Ad::where('id', $id)->where('merchant_id', $user->id)->first();
 
         if (!$ad) {
-            return response()->json(['res' => false, 'msg' => 'Anuncio no encontrado'], 404);
+            return response()->json([
+                'res' => false,
+                'msg' => 'Anuncio no encontrado',
+            ], 404);
         }
 
-        // Ya pagado y vigente
-        if ($ad->payment_status === 'approved'
-            && (int) $ad->status_id === 1
-            && $ad->end_at
-            && $ad->end_at->isFuture()) {
+        $request->validate([
+            'title' => 'required|string|max:150',
+        ]);
+
+        $linkUrl = trim($request->link_url ?? '');
+        $phone   = trim($request->phone ?? '');
+
+        if ($linkUrl === '' && $phone === '') {
             return response()->json([
-                'res'          => true,
-                'already_paid' => true,
-                'msg'          => 'Tu pago ya fue completado. Este anuncio ya está activo.',
-                'ad'           => [
-                    'id'          => $ad->id,
-                    'title'       => $ad->title,
-                    'status_id'   => $ad->status_id,
-                    'status_text' => 'Activo',
-                    'start_at'    => $ad->start_at?->format('Y-m-d H:i'),
-                    'end_at'      => $ad->end_at?->format('Y-m-d H:i'),
+                'res' => false,
+                'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
+            ], 422);
+        }
+
+        try {
+            $ad->title       = $request->title;
+            $ad->description = $request->description ?? null;
+            $ad->link_url    = $linkUrl ?: null;
+            $ad->phone       = $phone ?: null;
+            $ad->cta_text    = $request->cta_text ?? 'Ver más';
+
+            if ($request->hasFile('image')) {
+                $file = $request->file('image');
+                $ext  = $file->getClientOriginalExtension() ?: 'jpg';
+                $name = time() . '_' . $user->id . '.' . $ext;
+
+                if (!file_exists(public_path('img/ads'))) {
+                    mkdir(public_path('img/ads'), 0775, true);
+                }
+
+                if ($ad->image && file_exists(public_path('img/ads/' . $ad->image))) {
+                    @unlink(public_path('img/ads/' . $ad->image));
+                }
+
+                $file->move(public_path('img/ads'), $name);
+                $ad->image = $name;
+            }
+
+            $ad->save();
+
+            return response()->json([
+                'res' => true,
+                'msg' => 'Anuncio actualizado correctamente.',
+                'ad'  => [
+                    'id'           => $ad->id,
+                    'title'        => $ad->title,
+                    'description'  => $ad->description,
+                    'image_url'    => $ad->image_url,
+                    'link_url'     => $ad->link_url,
+                    'phone'        => $ad->phone,
+                    'whatsapp_url' => $this->whatsappUrlParaAd($ad),
                 ],
             ], 200);
-        }
+        } catch (\Throwable $th) {
+            \Log::error('[ads.update] Error: ' . $th->getMessage());
 
-        $planId = (int) $request->input('plan_id', 1);
-        $plan   = self::PLANES[$planId] ?? self::PLANES[1];
-
-        $token = config('services.mercadopago.access_token');
-
-        if (empty($token) || $token === 'null') {
             return response()->json([
                 'res' => false,
-                'msg' => 'Token de Mercado Pago no configurado',
+                'msg' => config('app.debug')
+                    ? 'Error al actualizar: ' . $th->getMessage()
+                    : 'Error al actualizar el anuncio',
             ], 500);
         }
-
-        $notificationUrl = config('services.mercadopago.notification_url');
-        $frontendUrl     = rtrim(config('services.mercadopago.frontend_url'), '/');
-
-        if (empty($notificationUrl)) {
-            return response()->json([
-                'res' => false,
-                'msg' => 'MERCADOPAGO_NOTIFICATION_URL no configurada',
-            ], 500);
-        }
-
-        $preferenceData = [
-            'items' => [[
-                'id'          => 'ad_' . $ad->id,
-                'title'       => "Anuncio {$plan['nombre']} - {$ad->title}",
-                'description' => "Publicación de anuncio por {$plan['dias']} días",
-                'quantity'    => 1,
-                'unit_price'  => (float) $plan['precio'],
-                'currency_id' => 'MXN',
-            ]],
-            'payer' => [
-                'name'  => trim(($user->nombre ?? '') . ' ' . ($user->apellido_p ?? '')),
-                'email' => $user->email ?? 'comercio@email.com',
-            ],
-            'back_urls' => [
-                'success' => "{$frontendUrl}/pago-exitoso",
-                'failure' => "{$frontendUrl}/pago-fallido",
-                'pending' => "{$frontendUrl}/pago-pendiente",
-            ],
-            'notification_url'   => $notificationUrl,
-            'external_reference' => "ad_{$ad->id}_plan_{$planId}",
-            'auto_return'        => 'approved',
-        ];
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://api.mercadopago.com/checkout/preferences');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($preferenceData));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $token,
-            'Content-Type: application/json',
-            'Accept: application/json',
-        ]);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error    = curl_error($ch);
-        curl_close($ch);
-
-        if ($error) {
-            \Log::error('[ads.pay] Error de conexión MP', ['error' => $error]);
-            return response()->json([
-                'res' => false,
-                'msg' => 'Error de conexión con Mercado Pago: ' . $error,
-            ], 500);
-        }
-
-        $data = json_decode($response, true);
-
-        if ($httpCode !== 201 && $httpCode !== 200) {
-            \Log::error('[ads.pay] Error MP', ['httpCode' => $httpCode, 'response' => $data]);
-            return response()->json([
-                'res'   => false,
-                'msg'   => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
-                'debug' => config('app.debug') ? $data : null,
-            ], 500);
-        }
-
-        // Persistir preferencia y estado pending
-        $ad->preference_id         = $data['id'];
-        $ad->plan_id               = $planId;
-        $ad->amount_paid           = (float) $plan['precio'];
-        $ad->payment_status        = 'pending';
-        $ad->payment_status_detail = 'waiting_payment';
-        $ad->payment_notified_at   = now();
-        $ad->save();
-
-        return response()->json([
-            'res'                => true,
-            'preference_id'      => $data['id'],
-            'init_point'         => $data['init_point'],
-            'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
-            'payment_status'     => $ad->payment_status,
-        ], 200);
     }
 
     // ================================================================
@@ -318,7 +269,7 @@ class AdController extends Controller
     }
 
     // ================================================================
-    // CONSULTA MANUAL (opcional)
+    // CONSULTA MANUAL
     // ================================================================
 
     public function paymentStatus(Request $request, $id)
@@ -353,15 +304,10 @@ class AdController extends Controller
     // PROCESAMIENTO (llamado desde verificarPago)
     // ================================================================
 
-    /**
-     * Procesa un pago de anuncio.
-     * $pago_mp = payload de MP (al menos 'id', ideal completo).
-     */
     public function procesarPagoDeAnuncio(array $pago_mp): array
     {
         $status = $pago_mp['status'] ?? null;
 
-        // Si solo llega el id, consultamos MP
         if (empty($pago_mp['external_reference']) && !empty($pago_mp['id'])) {
             $consultado = $this->consultarPagoMP((string) $pago_mp['id']);
             if ($consultado) {
@@ -412,7 +358,6 @@ class AdController extends Controller
             ];
         }
 
-        // Idempotencia
         $incomingPaymentId = isset($pago_mp['id']) ? (string) $pago_mp['id'] : null;
 
         if ($ad->payment_status === 'approved'
@@ -426,7 +371,6 @@ class AdController extends Controller
             ];
         }
 
-        // Guardar SIEMPRE el estado del pago
         $ad->payment_status        = $status;
         $ad->payment_status_detail = $pago_mp['status_detail'] ?? null;
         $ad->payment_id            = $incomingPaymentId ?? $ad->payment_id;
@@ -436,7 +380,6 @@ class AdController extends Controller
         $ad->payment_payload       = $pago_mp;
         $ad->plan_id               = $planId;
 
-        // Solo al aprobar: activar y fijar vigencia
         if ($status === 'approved') {
             $debeActivar = (int) $ad->status_id !== 1
                 || !$ad->end_at
@@ -475,10 +418,6 @@ class AdController extends Controller
         ];
     }
 
-    /**
-     * Consulta el pago real a Mercado Pago.
-     * Público para reutilizarse desde verificarPago.
-     */
     public function consultarPagoMP(string $paymentId): ?array
     {
         $token = config('services.mercadopago.access_token');
@@ -516,91 +455,109 @@ class AdController extends Controller
     // ================================================================
     // HELPERS
     // ================================================================
-    /**
-     * Devuelve la URL de WhatsApp solo si el anuncio tiene teléfono válido.
-     * Si no hay phone, devuelve null y el front debe usar link_url.
-     */
+
     private function whatsappUrlParaAd(Ad $ad): ?string
-{
-    if (empty($ad->phone)) {
-        return null;
-    }
-
-    // Normaliza (agrega 52 si son 10 dígitos, etc.)
-    $num = normalizarTelefonoWhatsApp($ad->phone);
-
-    // Si el helper falla, intenta un fallback directo con dígitos
-    if (!$num) {
-        $digits = preg_replace('/\D+/', '', (string) $ad->phone);
-
-        if (strlen($digits) === 10) {
-            $num = '52' . $digits;
-        } elseif (strlen($digits) >= 11) {
-            $num = $digits;
-        } else {
-            return null; // teléfono inválido de verdad
+    {
+        if (empty($ad->phone)) {
+            return null;
         }
+
+        $num = normalizarTelefonoWhatsApp($ad->phone);
+
+        if (!$num) {
+            $digits = preg_replace('/\D+/', '', (string) $ad->phone);
+
+            if (strlen($digits) === 10) {
+                $num = '52' . $digits;
+            } elseif (strlen($digits) >= 11) {
+                $num = $digits;
+            } else {
+                return null;
+            }
+        }
+
+        $mensaje = "Hola, vi tu anuncio \"{$ad->title}\" en la comunidad y me interesa más información.";
+
+        return 'https://wa.me/' . $num . '?text=' . rawurlencode($mensaje);
     }
 
-    $mensaje = "Hola, vi tu anuncio \"{$ad->title}\" en la comunidad y me interesa más información.";
-
-    return 'https://wa.me/' . $num . '?text=' . rawurlencode($mensaje);
-}
-
-
-
-
+    /**
+     * 🔑 Formato del anuncio para la comunidad (feed global)
+     * - Prioriza `nombre_comercio` del usuario.
+     * - Incluye `logo_url` del comercio.
+     */
     private function formatearAdParaComunidad(Ad $ad): array
-{
-    return [
-        'id'           => $ad->id,
-        'title'        => $ad->title,
-        'description'  => $ad->description,
-        'image_url'    => $ad->image_url,
-        'video_url'    => $ad->video_url,
-        'link_url'     => $ad->link_url,
-        'phone'        => $ad->phone,
-        'whatsapp_url' => $this->whatsappUrlParaAd($ad),
-        'cta_text'     => $ad->cta_text,
-        'merchant'     => [
-            'id'     => $ad->merchant?->id,
-            'nombre' => trim(
-                ($ad->merchant?->nombre ?? '') . ' ' .
-                ($ad->merchant?->apellido_p ?? '')
-            ),
-        ],
-    ];
-}
+    {
+        $merchant = $ad->merchant;
 
-   private function formatearAdParaPanel(Ad $ad): array
-{
-    return [
-        'id'                    => $ad->id,
-        'title'                 => $ad->title,
-        'description'           => $ad->description,
-        'image_url'             => $ad->image_url,
-        'link_url'              => $ad->link_url,
-        'phone'                 => $ad->phone,
-        'whatsapp_url'          => $this->whatsappUrlParaAd($ad),
-        'cta_text'              => $ad->cta_text,
-        'status_id'             => $ad->status_id,
-        'status_text'           => $this->getStatusTexto((int) $ad->status_id),
-        'payment_status'        => $ad->payment_status,
-        'payment_status_detail' => $ad->payment_status_detail,
-        'payment_id'            => $ad->payment_id,
-        'preference_id'         => $ad->preference_id,
-        'payment_method'        => $ad->payment_method,
-        'amount_paid'           => $ad->amount_paid,
-        'plan_id'               => $ad->plan_id,
-        'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
-        'priority'              => $ad->priority,
-        'impressions'           => $ad->impressions,
-        'clicks'                => $ad->clicks,
-        'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
-        'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
-        'created_at'            => $ad->created_at?->format('Y-m-d H:i'),
-    ];
-}
+        // 🔑 Nombre comercial con fallback
+        $nombreComercio = $merchant?->nombre_comercio
+            ?: trim(
+                ($merchant?->nombre ?? '') . ' ' .
+                ($merchant?->apellido_p ?? '')
+            );
+
+        return [
+            'id'           => $ad->id,
+            'title'        => $ad->title,
+            'description'  => $ad->description,
+            'image_url'    => $ad->image_url,
+            'video_url'    => $ad->video_url,
+            'link_url'     => $ad->link_url,
+            'phone'        => $ad->phone,
+            'whatsapp_url' => $this->whatsappUrlParaAd($ad),
+            'cta_text'     => $ad->cta_text,
+            'merchant'     => [
+                'id'       => $merchant?->id,
+                'nombre'   => $nombreComercio,
+                'logo_url' => $merchant?->avatar_url,
+            ],
+        ];
+    }
+
+    /**
+     * 🔑 Formato del anuncio para el panel del comercio (dueño)
+     * - Incluye `merchant_name` con el nombre comercial.
+     */
+    private function formatearAdParaPanel(Ad $ad): array
+    {
+        $merchant = $ad->merchant;
+
+        $nombreComercio = $merchant?->nombre_comercio
+            ?: trim(
+                ($merchant?->nombre ?? '') . ' ' .
+                ($merchant?->apellido_p ?? '')
+            );
+
+        return [
+            'id'                    => $ad->id,
+            'title'                 => $ad->title,
+            'description'           => $ad->description,
+            'image_url'             => $ad->image_url,
+            'link_url'              => $ad->link_url,
+            'phone'                 => $ad->phone,
+            'whatsapp_url'          => $this->whatsappUrlParaAd($ad),
+            'cta_text'              => $ad->cta_text,
+            'status_id'             => $ad->status_id,
+            'status_text'           => $this->getStatusTexto((int) $ad->status_id),
+            'payment_status'        => $ad->payment_status,
+            'payment_status_detail' => $ad->payment_status_detail,
+            'payment_id'            => $ad->payment_id,
+            'preference_id'         => $ad->preference_id,
+            'payment_method'        => $ad->payment_method,
+            'amount_paid'           => $ad->amount_paid,
+            'plan_id'               => $ad->plan_id,
+            'paid_at'               => $ad->paid_at?->format('Y-m-d H:i'),
+            'priority'              => $ad->priority,
+            'impressions'           => $ad->impressions,
+            'clicks'                => $ad->clicks,
+            'start_at'              => $ad->start_at?->format('Y-m-d H:i'),
+            'end_at'                => $ad->end_at?->format('Y-m-d H:i'),
+            'created_at'            => $ad->created_at?->format('Y-m-d H:i'),
+            // 🔑 Nombre del comercio para el dueño
+            'merchant_name'         => $nombreComercio,
+        ];
+    }
 
     private function getStatusTexto(int $statusId): string
     {
@@ -612,98 +569,4 @@ class AdController extends Controller
             default => 'Desconocido',
         };
     }
-
-    // ================================================================
-// ACTUALIZAR ANUNCIO
-// ================================================================
-public function update(Request $request, $id)
-{
-    $user = $request->user();
-
-    if (!$user || (int) $user->rol_id !== 4) {
-        return response()->json([
-            'res' => false,
-            'msg' => 'Solo comercios pueden editar anuncios',
-        ], 403);
-    }
-
-    // 1. Buscar el anuncio y verificar propiedad
-    $ad = Ad::where('id', $id)->where('merchant_id', $user->id)->first();
-
-    if (!$ad) {
-        return response()->json([
-            'res' => false,
-            'msg' => 'Anuncio no encontrado',
-        ], 404);
-    }
-
-    // 2. Validaciones
-    $request->validate([
-        'title' => 'required|string|max:150',
-    ]);
-
-    $linkUrl = trim($request->link_url ?? '');
-    $phone   = trim($request->phone ?? '');
-
-    if ($linkUrl === '' && $phone === '') {
-        return response()->json([
-            'res' => false,
-            'msg' => 'Debes proporcionar al menos un link o un teléfono de contacto.',
-        ], 422);
-    }
-
-    try {
-        // 3. Actualizar datos básicos
-        $ad->title       = $request->title;
-        $ad->description = $request->description ?? null;
-        $ad->link_url    = $linkUrl ?: null;
-        $ad->phone       = $phone ?: null;
-        $ad->cta_text    = $request->cta_text ?? 'Ver más';
-
-        // 4. Si viene una imagen nueva, reemplazar
-        if ($request->hasFile('image')) {
-            $file = $request->file('image');
-            $ext  = $file->getClientOriginalExtension() ?: 'jpg';
-            $name = time() . '_' . $user->id . '.' . $ext;
-
-            if (!file_exists(public_path('img/ads'))) {
-                mkdir(public_path('img/ads'), 0775, true);
-            }
-
-            // Eliminar imagen anterior si existe
-            if ($ad->image && file_exists(public_path('img/ads/' . $ad->image))) {
-                @unlink(public_path('img/ads/' . $ad->image));
-            }
-
-            $file->move(public_path('img/ads'), $name);
-            $ad->image = $name;
-        }
-
-        $ad->save();
-
-        return response()->json([
-            'res' => true,
-            'msg' => 'Anuncio actualizado correctamente.',
-            'ad'  => [
-                'id'           => $ad->id,
-                'title'        => $ad->title,
-                'description'  => $ad->description,
-                'image_url'    => $ad->image_url,
-                'link_url'     => $ad->link_url,
-                'phone'        => $ad->phone,
-                'whatsapp_url' => $this->whatsappUrlParaAd($ad),
-            ],
-        ], 200);
-
-    } catch (\Throwable $th) {
-        \Log::error('[ads.update] Error: ' . $th->getMessage());
-
-        return response()->json([
-            'res' => false,
-            'msg' => config('app.debug')
-                ? 'Error al actualizar: ' . $th->getMessage()
-                : 'Error al actualizar el anuncio',
-        ], 500);
-    }
-}
 }
