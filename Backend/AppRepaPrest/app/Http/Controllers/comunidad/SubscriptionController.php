@@ -12,7 +12,7 @@ class SubscriptionController extends Controller
 {
     private const COUPON_CODE       = 'SUSCRIPCION-ANUAL';
     private const ANNUAL_FREE_DAYS  = 365;
-    private const MONTHLY_PRICE_MXN = 70;
+    private const MONTHLY_PRICE_MXN = 120;
     private const MONTHLY_DAYS      = 30;
 
     // ================================================================
@@ -137,7 +137,7 @@ class SubscriptionController extends Controller
     // ================================================================
     // POST /subscription/renew — pago mensual $120 vía MercadoPago
     // ================================================================
-    public function renew(Request $request)
+      public function renew(Request $request)
     {
         $user = $request->user();
 
@@ -157,83 +157,146 @@ class SubscriptionController extends Controller
             return response()->json(['res' => false, 'msg' => 'MERCADOPAGO_NOTIFICATION_URL no configurada'], 500);
         }
 
-        $preferenceData = [
-            'items' => [[
-                'id'          => 'sub_' . $user->id,
-                'title'       => 'Suscripción mensual Delivery Sobre Ruedas',
-                'description' => 'Publicaciones ilimitadas por 30 días',
-                'quantity'    => 1,
-                'unit_price'  => self::MONTHLY_PRICE_MXN,
-                'currency_id' => 'MXN',
-            ]],
-            'payer' => [
-                'name'  => trim(($user->nombre ?? '') . ' ' . ($user->apellido_p ?? '')),
-                'email' => $user->email ?? 'comercio@email.com',
-            ],
-            'back_urls' => [
-                'success' => "{$frontendUrl}/pago-exitoso",
-                'failure' => "{$frontendUrl}/pago-fallido",
-                'pending' => "{$frontendUrl}/pago-pendiente",
-            ],
-            'notification_url'   => $notificationUrl,
-            'external_reference' => "sub_{$user->id}",
-            'auto_return'        => 'approved',
-        ];
+        try {
+            DB::beginTransaction();
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => 'https://api.mercadopago.com/checkout/preferences',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($preferenceData),
-            CURLOPT_HTTPHEADER     => [
-                'Authorization: Bearer ' . $token,
-                'Content-Type: application/json',
-                'Accept: application/json',
-            ],
-            CURLOPT_SSL_VERIFYPEER => config('app.env') === 'production',
-            CURLOPT_TIMEOUT        => 30,
-        ]);
+            // 🔑 1. LIMPIEZA: Borrar intentos de pago abandonados (más de 24h)
+            DB::delete(
+                'DELETE FROM tbl_subscriptions
+                 WHERE user_id = ?
+                   AND status = ?
+                   AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)',
+                [$user->id, 'pending_payment']
+            );
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error    = curl_error($ch);
-        curl_close($ch);
+            // 🔑 2. BUSCAR SI YA EXISTE UNA SOLICITUD PENDIENTE RECIENTE
+            $pending = DB::selectOne(
+                'SELECT id, preference_id FROM tbl_subscriptions
+                 WHERE user_id = ?
+                   AND status = ?
+                   AND plan = ?
+                 ORDER BY id DESC LIMIT 1',
+                [$user->id, 'pending_payment', 'monthly_paid']
+            );
 
-        if ($error) {
-            return response()->json(['res' => false, 'msg' => 'Error de conexión con Mercado Pago: ' . $error], 500);
-        }
+            // 3. GENERAR PREFERENCIA EN MERCADO PAGO
+            $preferenceData = [
+                'items' => [[
+                    'id'          => 'sub_' . $user->id,
+                    'title'       => 'Suscripción mensual Delivery Sobre Ruedas',
+                    'description' => 'Publicaciones ilimitadas por 30 días',
+                    'quantity'    => 1,
+                    'unit_price'  => self::MONTHLY_PRICE_MXN,
+                    'currency_id' => 'MXN',
+                ]],
+                'payer' => [
+                    'name'  => trim(($user->nombre ?? '') . ' ' . ($user->apellido_p ?? '')),
+                    'email' => $user->email ?? 'comercio@email.com',
+                ],
+                'back_urls' => [
+                    'success' => "{$frontendUrl}/pago-pendiente",
+                    'failure' => "{$frontendUrl}/pago-pendiente",
+                    'pending' => "{$frontendUrl}/pago-pendiente",
+                ],
+                'notification_url'   => $notificationUrl,
+                'external_reference' => "sub_{$user->id}",
+                'auto_return'        => 'approved',
+            ];
 
-        $data = json_decode($response, true);
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL            => 'https://api.mercadopago.com/checkout/preferences',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => json_encode($preferenceData),
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: Bearer ' . $token,
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                ],
+                CURLOPT_SSL_VERIFYPEER => config('app.env') === 'production',
+                CURLOPT_TIMEOUT        => 30,
+            ]);
 
-        if ($httpCode !== 201 && $httpCode !== 200) {
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error    = curl_error($ch);
+            curl_close($ch);
+
+            if ($error) {
+                DB::rollBack();
+                return response()->json(['res' => false, 'msg' => 'Error de conexión con Mercado Pago: ' . $error], 500);
+            }
+
+            $data = json_decode($response, true);
+
+            if ($httpCode !== 201 && $httpCode !== 200) {
+                DB::rollBack();
+                return response()->json([
+                    'res' => false,
+                    'msg' => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
+                ], 500);
+            }
+
+            // 4. GUARDAR O ACTUALIZAR EN LA BASE DE DATOS
+            if ($pending) {
+                // 🔑 4A. SI YA EXISTE → ACTUALIZAMOS LA PREFERENCIA Y FECHAS
+                DB::update(
+                    'UPDATE tbl_subscriptions
+                     SET preference_id = ?,
+                         starts_at = NOW(),
+                         expires_at = DATE_ADD(NOW(), INTERVAL ? DAY),
+                         updated_at = NOW()
+                     WHERE id = ?',
+                    [
+                        $data['id'],
+                        self::MONTHLY_DAYS,
+                        $pending->id,
+                    ]
+                );
+
+                $subscriptionId = $pending->id;
+                $isUpdate = true;
+
+            } else {
+                // 🔑 4B. SI NO EXISTE → INSERTAMOS UNA NUEVA SOLICITUD
+                DB::insert(
+                    'INSERT INTO tbl_subscriptions
+                     (user_id, plan, status, price_mxn, preference_id, starts_at, expires_at, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), NOW(), NOW())',
+                    [
+                        $user->id,
+                        'monthly_paid',
+                        'pending_payment',
+                        self::MONTHLY_PRICE_MXN,
+                        $data['id'],
+                        self::MONTHLY_DAYS,
+                    ]
+                );
+
+                $subscriptionId = DB::getPdo()->lastInsertId();
+                $isUpdate = false;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'res'             => true,
+                'init_point'      => $data['init_point'],
+                'preference_id'   => $data['id'],
+                'subscription_id' => (int) $subscriptionId,
+                'is_update'       => $isUpdate,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            \Log::error('[subscription.renew] ' . $th->getMessage());
             return response()->json([
                 'res' => false,
-                'msg' => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
+                'msg' => 'No se pudo generar la preferencia de pago.',
             ], 500);
         }
-
-        DB::insert(
-            'INSERT INTO tbl_subscriptions
-             (user_id, plan, status, price_mxn, preference_id, starts_at, expires_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), NOW(), NOW())',
-            [
-                $user->id,
-                'monthly_paid',
-                'pending_payment',
-                self::MONTHLY_PRICE_MXN,
-                $data['id'],
-                self::MONTHLY_DAYS,
-            ]
-        );
-
-        return response()->json([
-            'res'           => true,
-            'init_point'    => $data['init_point'],
-            'preference_id' => $data['id'],
-        ], 200);
     }
-
     // ================================================================
     // GET /subscription/status
     // ================================================================
