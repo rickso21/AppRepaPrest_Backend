@@ -53,6 +53,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'en_llamada' => 'boolean',
              'push_token_updated_at'  => 'datetime',
+              'locked_until' => 'datetime',
         ];
     }
 
