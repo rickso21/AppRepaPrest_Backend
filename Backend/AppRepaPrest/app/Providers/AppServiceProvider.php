@@ -33,7 +33,7 @@ class AppServiceProvider extends ServiceProvider
             $email = mb_strtolower((string) $request->input('email'));
             $key = $email . '|' . $request->ip();
 
-            return Limit::perMinutes(15, 5)
+            return Limit::perMinutes(15, 10)
                 ->by($key)
                 ->response(function (Request $request, array $headers) {
                     return response()->json([
