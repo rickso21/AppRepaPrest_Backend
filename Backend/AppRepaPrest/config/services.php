@@ -65,4 +65,10 @@ return [
         'secret' => env('LIVEKIT_API_SECRET'),
     ],
 
+    'roulette' => [
+        'weekly_prize_cap'     => (int) env('ROULETTE_WEEKLY_PRIZE_CAP', 1),
+        'max_consecutive_wins' => (int) env('ROULETTE_MAX_CONSECUTIVE_WINS', 3),
+        'balance_field'        => env('ROULETTE_BALANCE_FIELD', 'saldo'),
+    ],
+
 ];

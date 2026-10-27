@@ -2423,27 +2423,33 @@ if (!function_exists('repartidor_esta_activo')) {
 if (!function_exists('roulette_balance_field')) {
     /**
      * Nombre de la columna de saldo en tbl_user.
-     * Centralizado aquí para que solo cambies 1 lugar si el campo cambia.
+     * Configurable desde .env → ROULETTE_BALANCE_FIELD
      */
     function roulette_balance_field(): string
     {
-        return 'saldo';
+        return config('roulette.balance_field', 'saldo');
     }
 }
 
 if (!function_exists('roulette_max_consecutive_wins')) {
-    /** Semanas consecutivas con premio que fuerzan un perdedor. */
+    /**
+     * Semanas consecutivas con premio que fuerzan un perdedor.
+     * Configurable desde .env → ROULETTE_MAX_CONSECUTIVE_WINS
+     */
     function roulette_max_consecutive_wins(): int
     {
-        return 3;
+        return (int) config('roulette.max_consecutive_wins', 3);
     }
 }
 
 if (!function_exists('roulette_weekly_prize_cap')) {
-    /** Límite global de premios por semana (0 = sin límite). */
+    /**
+     * Límite global de premios por semana (0 = sin límite).
+     * Configurable desde .env → ROULETTE_WEEKLY_PRIZE_CAP
+     */
     function roulette_weekly_prize_cap(): int
     {
-        return 100;
+        return (int) config('roulette.weekly_prize_cap', 1);
     }
 }
 
@@ -2660,4 +2666,37 @@ if (!function_exists('roulette_payload_status')) {
     }
 }
 
+if (!function_exists('roulette_premios_restantes_semana')) {
+    /**
+     * ¿Cuántos premios quedan disponibles esta semana?
+     * Devuelve el número de premios que aún se pueden entregar.
+     * Retorna PHP_INT_MAX si el cap está desactivado (0).
+     */
+    function roulette_premios_restantes_semana(?string $weekKey = null): int
+    {
+        $weekKey = $weekKey ?? roulette_current_week_key();
+        $cap     = roulette_weekly_prize_cap();
+
+        if ($cap <= 0) {
+            return PHP_INT_MAX;   // sin límite
+        }
+
+        $entregados = \App\Models\RouletteSpin::where('prize_type', '!=', 'none')
+            ->where('week_key', $weekKey)
+            ->count();
+
+        return max(0, $cap - $entregados);
+    }
+}
+
+if (!function_exists('roulette_hay_premios_disponibles')) {
+    /**
+     * ¿Quedan premios disponibles esta semana (global)?
+     * Retorna true si todavía se puede entregar al menos 1 premio.
+     */
+    function roulette_hay_premios_disponibles(?string $weekKey = null): bool
+    {
+        return roulette_premios_restantes_semana($weekKey) > 0;
+    }
+}
 
