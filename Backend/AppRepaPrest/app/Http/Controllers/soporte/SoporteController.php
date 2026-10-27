@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\soporte;
 
 use App\Http\Controllers\Controller;
-use App\Models\Soporte;
+use Illuminate\Http\Request;
 
 class SoporteController extends Controller
 {
