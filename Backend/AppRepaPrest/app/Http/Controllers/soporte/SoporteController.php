@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\soporte;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Models\Soporte;
 
 class SoporteController extends Controller
 {
