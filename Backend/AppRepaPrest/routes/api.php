@@ -139,28 +139,28 @@ Route::get('/consultar-preferencia-mp', [MercadoPagoController::class, 'consulta
 
 // Auth (con rate limiting)
 Route::post('/login', [loginController::class, 'login'])
-    ->middleware('throttle:5,15');
+    ->middleware('throttle:login');
 
 Route::post('/register', [loginController::class, 'register'])
-    ->middleware('throttle:3,60');
+    ->middleware('throttle:register');
 
 Route::post('/register_admin', [loginController::class, 'register_admin'])
-    ->middleware('throttle:3,60');
+    ->middleware('throttle:register');
 
 Route::post('/register_comercio', [loginController::class, 'register_comercio'])
-    ->middleware('throttle:3,60');
+    ->middleware('throttle:register');
 
 Route::post('/admin/register', [adminController::class, 'index'])
-    ->middleware('throttle:3,60');
+    ->middleware('throttle:register');
 
-// Password (protegido)
+// Password (con rate limiting nombrado)
 Route::post('/forgot-password', [passwordController::class, 'olvide_password'])
-    ->middleware('throttle:3,60');
+    ->middleware('throttle:forgot-password');
 
 Route::post('/new-password', [passwordController::class, 'nueva_password'])
-    ->middleware('throttle:5,15');
+    ->middleware('throttle:5,15');   // ← este no tiene limiter nombrado, dejamos el numérico
 
-// Pagos (protegido)
+// Pagos
 Route::post('/verificar_pago', [pagoController::class, 'verificarPago'])
     ->middleware('throttle:10,15');
 
