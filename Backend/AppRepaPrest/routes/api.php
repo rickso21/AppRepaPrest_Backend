@@ -137,19 +137,32 @@ Route::get('/soporte', [SoporteController::class, 'show']);
 Route::get('/consultar-pago-mp', [MercadoPagoController::class, 'consultarPagoMercadoPago']);
 Route::get('/consultar-preferencia-mp', [MercadoPagoController::class, 'consultarPreferenciaMercadoPago']);
 
-// Auth
-Route::post('/login', [loginController::class, 'login']);
-Route::post('/register', [loginController::class, 'register']);
-Route::post('/register_admin', [loginController::class, 'register_admin']);
-Route::post('/register_comercio', [loginController::class, 'register_comercio']);
-Route::post('/admin/register', [adminController::class, 'index']);
+// Auth (con rate limiting)
+Route::post('/login', [loginController::class, 'login'])
+    ->middleware('throttle:5,15');
 
-// Password
+Route::post('/register', [loginController::class, 'register'])
+    ->middleware('throttle:3,60');
+
+Route::post('/register_admin', [loginController::class, 'register_admin'])
+    ->middleware('throttle:3,60');
+
+Route::post('/register_comercio', [loginController::class, 'register_comercio'])
+    ->middleware('throttle:3,60');
+
+Route::post('/admin/register', [adminController::class, 'index'])
+    ->middleware('throttle:3,60');
+
+// Password (protegido)
 Route::post('/forgot-password', [passwordController::class, 'olvide_password'])
-    ->middleware('throttle:3,1');
-Route::post('/new-password', [passwordController::class, 'nueva_password']);
-// Pagos
-Route::post('/verificar_pago', [pagoController::class, 'verificarPago']);
+    ->middleware('throttle:3,60');
+
+Route::post('/new-password', [passwordController::class, 'nueva_password'])
+    ->middleware('throttle:5,15');
+
+// Pagos (protegido)
+Route::post('/verificar_pago', [pagoController::class, 'verificarPago'])
+    ->middleware('throttle:10,15');
 
 Route::post('/contacto', [ContactoController::class, 'store'])
-    ->middleware('throttle:10,15'); // 10 intentos cada 15 min por IP
+    ->middleware('throttle:10,15');

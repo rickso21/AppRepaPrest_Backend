@@ -195,37 +195,71 @@ class loginController extends Controller
     // AUTENTICACIÓN
 
     public function login(loginRequest $request)
-    {
-        $user = user_buscar_por_email_o_telefono($request->email);
+{
+    $user = user_buscar_por_email_o_telefono($request->email);
 
-        if (!$user) {
-            return user_error_response('Usuario no encontrado, vuelve a intentarlo', 404);
-        }
+    if (!$user) {
+        return user_error_response('Usuario no encontrado, vuelve a intentarlo', 404);
+    }
 
-        if ((int) $user->status_id !== user_status_activo()) {
+    // ¿Cuenta bloqueada por intentos fallidos?
+    if ($user->locked_until && now()->lt($user->locked_until)) {
+        $remaining = max(1, (int) now()->diffInMinutes($user->locked_until));
+        return user_error_response(
+            "Cuenta bloqueada por seguridad. Intenta de nuevo en {$remaining} minutos.",
+            423
+        );
+    }
+
+    // Verificar estado activo (igual que antes)
+    if ((int) $user->status_id !== user_status_activo()) {
+        return user_error_response(
+            'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
+            403
+        );
+    }
+
+    //Contraseña incorrecta → contar intento
+    if (!Hash::check($request->password, $user->password)) {
+        $user->increment('failed_login_attempts');
+
+        if ($user->failed_login_attempts >= 5) {
+            $user->update([
+                'locked_until'           => now()->addMinutes(30),
+                'failed_login_attempts'  => 0,
+            ]);
+
             return user_error_response(
-                'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
-                403
+                'Demasiados intentos fallidos. Tu cuenta estará bloqueada por 30 minutos.',
+                423
             );
         }
 
-        if (!Hash::check($request->password, $user->password)) {
-            return user_error_response('Contraseña incorrecta.', 401);
-        }
-
-        $tokenData = user_crear_token($user);
-
-        repartidor_desconectar_usuario($user->id, 'login reset');
-
-        return response()->json([
-            'res'        => true,
-            'token'      => $tokenData['token'],
-            'created_at' => $tokenData['created_at'],
-            'expired_at' => $tokenData['expired_at'],
-            'msg'        => numeroAleatorio(1, 10),
-            'user'       => user_formatear_login($user),
-        ], 200);
+        return user_error_response('Contraseña incorrecta.', 401);
     }
+
+    //Login exitoso → resetear contador de fallos
+    if ($user->failed_login_attempts > 0 || $user->locked_until) {
+        $user->update([
+            'failed_login_attempts' => 0,
+            'locked_until'          => null,
+        ]);
+    }
+
+    // ─── Lógica original intacta ───
+    $tokenData = user_crear_token($user);
+
+    repartidor_desconectar_usuario($user->id, 'login reset');
+
+    return response()->json([
+        'res'        => true,
+        'token'      => $tokenData['token'],
+        'created_at' => $tokenData['created_at'],
+        'expired_at' => $tokenData['expired_at'],
+        'msg'        => numeroAleatorio(1, 10),
+        'user'       => user_formatear_login($user),
+    ], 200);
+}
 
 // AUTENTICACIÓN
     public function logout(Request $request)

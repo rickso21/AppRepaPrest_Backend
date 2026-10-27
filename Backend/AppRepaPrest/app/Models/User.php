@@ -32,6 +32,8 @@ use Illuminate\Support\Facades\Log;
     'llamada_de',
     'current_channel',
     'expo_push_token',
+    'failed_login_attempts',
+    'locked_until',
 ])]
 #[Hidden(['password', 'remember_token', 'token_pc'])]
 #[Table('tbl_user')]
