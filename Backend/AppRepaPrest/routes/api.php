@@ -4,7 +4,7 @@ use App\Http\Controllers\mapa\MapaController;
 use App\Http\Controllers\LiveKitController;
 use App\Http\Controllers\prestamo\prestamoController;
 use App\Http\Controllers\admin\adminController;
-use App\Http\Controllers\Api\SoporteController;
+use App\Http\Controllers\SoporteController;
 use App\Http\Controllers\pago\pagoController;
 use App\Http\Controllers\MercadoPagoAllExterno\MercadoPagoController;
 use App\Http\Controllers\tranferencia\tranferenciaController;
