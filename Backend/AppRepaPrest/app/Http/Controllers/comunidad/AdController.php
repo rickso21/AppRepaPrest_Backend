@@ -509,7 +509,7 @@ class AdController extends Controller
             'cta_text'     => $ad->cta_text,
             'merchant'     => [
                 'id'       => $merchant?->id,
-                'nombre'   => $nombreComercio,
+                'nombre_comercio'   => $nombreComercio,
                 'logo_url' => $merchant?->avatar_url,
             ],
         ];
