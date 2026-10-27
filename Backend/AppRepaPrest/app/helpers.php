@@ -2273,6 +2273,7 @@ if (!function_exists('user_eliminar_avatar_circular')) {
             @unlink($fullPath);
         }
     }
+}
 
     if (!function_exists('user_status_activo'))   { function user_status_activo()   { return 1; } }
 if (!function_exists('user_status_inactivo')) { function user_status_inactivo() { return 2; } }
@@ -2414,4 +2415,249 @@ if (!function_exists('repartidor_esta_activo')) {
             ->gte(repartidor_limite_inactividad());
     }
 }
+
+// ============================================================
+// RULETA DE PREMIOS
+// ============================================================
+
+if (!function_exists('roulette_balance_field')) {
+    /**
+     * Nombre de la columna de saldo en tbl_user.
+     * Centralizado aquí para que solo cambies 1 lugar si el campo cambia.
+     */
+    function roulette_balance_field(): string
+    {
+        return 'saldo';
+    }
 }
+
+if (!function_exists('roulette_max_consecutive_wins')) {
+    /** Semanas consecutivas con premio que fuerzan un perdedor. */
+    function roulette_max_consecutive_wins(): int
+    {
+        return 3;
+    }
+}
+
+if (!function_exists('roulette_weekly_prize_cap')) {
+    /** Límite global de premios por semana (0 = sin límite). */
+    function roulette_weekly_prize_cap(): int
+    {
+        return 100;
+    }
+}
+
+if (!function_exists('roulette_current_week_key')) {
+    /** Week key ISO: 2026-W43 */
+    function roulette_current_week_key(): string
+    {
+        return now()->format('o-\WW');
+    }
+}
+
+if (!function_exists('roulette_next_spin_at')) {
+    /** Próximo lunes a las 00:00 como ISO8601. */
+    function roulette_next_spin_at(): string
+    {
+        return now()->startOfWeek()->addWeek()->toIso8601String();
+    }
+}
+
+if (!function_exists('roulette_ya_giro_esta_semana')) {
+    /**
+     * ¿El usuario ya giró la ruleta en la semana actual?
+     */
+    function roulette_ya_giro_esta_semana(int $userId): bool
+    {
+        return \App\Models\RouletteSpin::where('user_id', $userId)
+            ->where('week_key', roulette_current_week_key())
+            ->exists();
+    }
+}
+
+if (!function_exists('roulette_premios_elegibles_para')) {
+    /**
+     * Devuelve la colección de premios elegibles para un usuario concreto,
+     * aplicando las reglas de:
+     *   a) racha máxima de victorias consecutivas
+     *   b) cuota semanal global de premios
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\RoulettePrize>
+     */
+    function roulette_premios_elegibles_para(int $userId, ?string $weekKey = null): \Illuminate\Support\Collection
+    {
+        $weekKey = $weekKey ?? roulette_current_week_key();
+        $prizes  = \App\Models\RoulettePrize::eligible();
+
+        // a) Racha
+        $maxWins = roulette_max_consecutive_wins();
+        if ($maxWins > 0) {
+            $recentWins = \App\Models\RouletteSpin::where('user_id', $userId)
+                ->where('prize_type', '!=', 'none')
+                ->where('spin_at', '>=', now()->subWeeks($maxWins))
+                ->count();
+
+            if ($recentWins >= $maxWins) {
+                $losers = $prizes->where('prize_type', 'none');
+                if ($losers->isNotEmpty()) {
+                    return $losers->values();
+                }
+            }
+        }
+
+        // b) Cuota semanal
+        $cap = roulette_weekly_prize_cap();
+        if ($cap > 0) {
+            $premiosEstaSemana = \App\Models\RouletteSpin::where('prize_type', '!=', 'none')
+                ->where('week_key', $weekKey)
+                ->count();
+
+            if ($premiosEstaSemana >= $cap) {
+                $losers = $prizes->where('prize_type', 'none');
+                if ($losers->isNotEmpty()) {
+                    return $losers->values();
+                }
+            }
+        }
+
+        return $prizes;
+    }
+}
+
+if (!function_exists('roulette_seleccionar_premio_ponderado')) {
+    /**
+     * Selecciona un premio aleatorio ponderado por `weight`.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Models\RoulettePrize> $prizes
+     * @return \App\Models\RoulettePrize|null
+     */
+    function roulette_seleccionar_premio_ponderado(\Illuminate\Support\Collection $prizes): ?\App\Models\RoulettePrize
+    {
+        if ($prizes->isEmpty()) {
+            return null;
+        }
+
+        $total = (int) $prizes->sum('weight');
+        if ($total <= 0) {
+            return $prizes->first();
+        }
+
+        $rand = random_int(1, $total);
+        $acc  = 0;
+
+        foreach ($prizes as $p) {
+            $acc += (int) $p->weight;
+            if ($rand <= $acc) {
+                return $p;
+            }
+        }
+
+        return $prizes->first();
+    }
+}
+
+if (!function_exists('roulette_acreditar_recarga')) {
+    /**
+     * Suma el monto al saldo del usuario.
+     *
+     * ⚠️ Debe llamarse DENTRO de una transacción con lockForUpdate()
+     *    del User y del Prize, como hace el controller.
+     */
+    function roulette_acreditar_recarga(int $userId, float $monto): bool
+    {
+        if ($monto <= 0) {
+            return false;
+        }
+
+        $field = roulette_balance_field();
+        $user  = \App\Models\User::where('id', $userId)->lockForUpdate()->first();
+
+        if (!$user) {
+            return false;
+        }
+
+        $user->increment($field, $monto);
+
+        \Log::info('[roulette] Recarga acreditada', [
+            'user_id' => $userId,
+            'monto'   => $monto,
+            'campo'   => $field,
+            'nuevo'   => $user->fresh()->{$field} ?? null,
+        ]);
+
+        return true;
+    }
+}
+
+if (!function_exists('roulette_payload_prize')) {
+    /**
+     * Formatea un premio para la respuesta HTTP (no revela nada oculto).
+     */
+    function roulette_payload_prize(\App\Models\RoulettePrize $prize): array
+    {
+        return [
+            'id'           => $prize->id,
+            'label'        => $prize->label,
+            'color'        => $prize->color,
+            'weight'       => (int) $prize->weight,
+            'prize_type'   => $prize->prize_type,
+            'reward_value' => (float) $prize->reward_value,
+        ];
+    }
+}
+
+if (!function_exists('roulette_payload_spin_result')) {
+    /**
+     * Formatea la respuesta del spin (éxito).
+     */
+    function roulette_payload_spin_result(
+        \App\Models\RoulettePrize $prize,
+        int $index,
+        int $total
+    ): array {
+        return [
+            'ok'    => true,
+            'index' => $index,
+            'total' => $total,
+            'coupon' => [
+                'id'           => $prize->id,
+                'label'        => $prize->label,
+                'color'        => $prize->color,
+                'prize_type'   => $prize->prize_type,
+                'reward_value' => (float) $prize->reward_value,
+            ],
+            'message' => $prize->prize_type === 'recharge'
+                ? "¡Ganaste una recarga de \${$prize->reward_value} MXN! Ya está en tu saldo."
+                : 'Esta vez no ganaste. ¡Suerte la próxima semana!',
+        ];
+    }
+}
+
+if (!function_exists('roulette_payload_status')) {
+    /**
+     * Formatea la respuesta de /status a partir del último spin y del spin semanal.
+     */
+    function roulette_payload_status(
+        ?\App\Models\RouletteSpin $lastSpin,
+        ?\App\Models\RouletteSpin $thisSpin,
+        string $weekKey
+    ): array {
+        $canSpin = $thisSpin === null;
+
+        return [
+            'can_spin'     => $canSpin,
+            'week_key'     => $weekKey,
+            'next_spin_at' => $canSpin ? null : roulette_next_spin_at(),
+            'last_prize'   => $lastSpin ? [
+                'label'        => $lastSpin->prize_type === 'recharge'
+                                    ? '$' . number_format((float)$lastSpin->reward_value, 0)
+                                    : 'Sin premio',
+                'prize_type'   => $lastSpin->prize_type,
+                'reward_value' => (float) $lastSpin->reward_value,
+                'spin_at'      => $lastSpin->spin_at?->toIso8601String(),
+            ] : null,
+        ];
+    }
+}
+
+

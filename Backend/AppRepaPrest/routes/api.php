@@ -13,6 +13,7 @@ use App\Http\Controllers\user\passwordController;
 use App\Http\Controllers\comunidad\publicacionController;
 use App\Http\Controllers\comunidad\commentController;
 use App\Http\Controllers\comunidad\AdController;
+use App\Http\Controllers\comunidad\RouletteController;
 use App\Http\Controllers\contacto\ContactoController;
 use App\Http\Controllers\comunidad\SubscriptionController;
 use Illuminate\Http\Request;
@@ -34,6 +35,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::match(['put', 'post'], '/{id}/update', [AdController::class, 'update']);
 
 
+    });
+
+    Route::prefix('roulette')->group(function () {
+    Route::get('/prizes', [RouletteController::class, 'prizes']);
+    Route::get('/status', [RouletteController::class, 'status']);
+    Route::post('/spin',  [RouletteController::class, 'spin']);
     });
 
 
