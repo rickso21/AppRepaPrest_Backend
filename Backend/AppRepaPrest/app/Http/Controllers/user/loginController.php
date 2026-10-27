@@ -597,4 +597,143 @@ public function deletePushToken(Request $request)
 
     return user_success_response('Token eliminado correctamente');
 }
+
+
+// ================================================================
+// EDITAR COMERCIO
+// ================================================================
+public function update_merchant(Request $request)
+{
+    $user_token = $request->user();
+
+    if ($response = user_validate_auth($user_token)) {
+        return $response;
+    }
+
+    if ((int) $user_token->rol_id !== 4) {
+        return user_error_response('Solo comercios pueden editar su información.', 403);
+    }
+
+    $request->validate([
+        'nombre'          => 'required|string|max:100',
+        'apellido_p'      => 'nullable|string|max:100',
+        'apellido_m'      => 'nullable|string|max:100',
+        'nombre_comercio' => 'required|string|max:150',
+        'telefono'        => 'nullable|string|max:20',
+        'ciudad'          => 'nullable|string|max:50',
+    ]);
+
+    try {
+        $user = User::findOrFail($user_token->id);
+
+        // Validar email/teléfono únicos si cambian
+        if ($request->filled('email') && $request->email !== $user->email) {
+            $exists = User::where('email', $request->email)
+                ->where('id', '!=', $user->id)
+                ->exists();
+            if ($exists) {
+                return user_error_response('El correo ya está registrado por otro usuario', 409);
+            }
+            $user->email = $request->email;
+        }
+
+        if ($request->filled('telefono') && $request->telefono !== $user->telefono) {
+            $exists = User::where('telefono', $request->telefono)
+                ->where('id', '!=', $user->id)
+                ->exists();
+            if ($exists) {
+                return user_error_response('El teléfono ya está registrado por otro usuario', 409);
+            }
+            $user->telefono = $request->telefono;
+        }
+
+        // Actualizar campos básicos
+        $user->nombre          = trim($request->nombre);
+        $user->apellido_p      = $request->apellido_p ? trim($request->apellido_p) : null;
+        $user->apellido_m      = $request->apellido_m ? trim($request->apellido_m) : null;
+        $user->nombre_comercio = trim($request->nombre_comercio);
+        $user->ciudad          = $request->ciudad ? trim($request->ciudad) : null;
+
+        $user->save();
+
+        return response()->json([
+            'res'  => true,
+            'msg'  => 'Información del comercio actualizada correctamente.',
+            'user' => [
+                'id'              => $user->id,
+                'nombre'          => $user->nombre,
+                'nombre_completo' => trim(
+                    $user->nombre . ' ' . ($user->apellido_p ?? '') . ' ' . ($user->apellido_m ?? '')
+                ),
+                'nombre_comercio' => $user->nombre_comercio,
+                'email'           => $user->email,
+                'telefono'        => $user->telefono,
+                'ciudad'          => $user->ciudad,
+                'avatar_url'      => $user->avatar_url,
+            ],
+        ], 200);
+
+    } catch (\Throwable $th) {
+        \Log::error('[update_merchant] Error: ' . $th->getMessage());
+
+        return user_error_response(
+            'Error al actualizar el comercio: ' . $th->getMessage(),
+            500
+        );
+    }
+}
+
+// ================================================================
+// ELIMINAR (INHABILITAR) COMERCIO
+// ================================================================
+public function delete_merchant(Request $request)
+{
+    $user_token = $request->user();
+
+    if ($response = user_validate_auth($user_token)) {
+        return $response;
+    }
+
+    if ((int) $user_token->rol_id !== 4) {
+        return user_error_response('Solo comercios pueden eliminar su cuenta.', 403);
+    }
+
+    try {
+        DB::beginTransaction();
+
+        $user = User::findOrFail($user_token->id);
+
+        // 1. Desactivar todos los anuncios del comercio
+        \App\Models\Ad::where('merchant_id', $user->id)
+            ->update(['status_id' => 2]); // status_id 2 = Expirado
+
+        // 2. Marcar la suscripción como cancelada
+        \App\Models\Subscription::where('user_id', $user->id)
+            ->where('status', 'active')
+            ->update(['status' => 'cancelled']);
+
+        // 3. Marcar el usuario como inactivo
+        $user->status_id = user_status_inactivo();
+        $user->save();
+
+        // 4. Revocar tokens activos
+        $user->tokens()->delete();
+
+        DB::commit();
+
+        return response()->json([
+            'res' => true,
+            'msg' => 'Tu cuenta de comercio ha sido desactivada. Tus anuncios ya no serán visibles.',
+        ], 200);
+
+    } catch (\Throwable $th) {
+        DB::rollBack();
+        \Log::error('[delete_merchant] Error: ' . $th->getMessage());
+
+        return user_error_response(
+            'Error al eliminar la cuenta: ' . $th->getMessage(),
+            500
+        );
+    }
+}
 }

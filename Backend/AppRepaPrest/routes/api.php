@@ -103,6 +103,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/grupo/{id}/miembros', [loginController::class, 'miembros_grupo']);
 
 
+    Route::match(['post', 'put'], '/merchant/update', [loginController::class, 'update_merchant']);
+Route::delete('/merchant/delete', [loginController::class, 'delete_merchant']);
+
+
     // comunidad
     Route::prefix('publication')->group(function () {
         Route::get('/', [publicacionController::class, 'index']);
