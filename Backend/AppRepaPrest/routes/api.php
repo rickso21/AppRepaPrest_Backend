@@ -32,7 +32,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/click', [AdController::class, 'click']);
         Route::match(['put', 'post'], '/{id}/update', [AdController::class, 'update']);
 
+
     });
+
+
+    Route::match(['post', 'put'], '/merchant/update', [loginController::class, 'update_merchant']);
+    Route::delete('/merchant/delete', [loginController::class, 'delete_merchant']);
 
     // RUTAS DE SUSCRIPCIÓN
     Route::prefix('subscription')->group(function () {
@@ -103,8 +108,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/grupo/{id}/miembros', [loginController::class, 'miembros_grupo']);
 
 
-    Route::match(['post', 'put'], '/merchant/update', [loginController::class, 'update_merchant']);
-Route::delete('/merchant/delete', [loginController::class, 'delete_merchant']);
+
 
 
     // comunidad
