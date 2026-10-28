@@ -34,7 +34,8 @@ class RouletteController extends Controller
     // ==================================================================
     public function status(Request $request)
 {
-    $userId  = $request->user()->id;
+    $user    = $request->user();
+    $userId  = $user->id;
     $weekKey = roulette_current_week_key();
 
     $lastSpin = RouletteSpin::where('user_id', $userId)
@@ -53,6 +54,10 @@ class RouletteController extends Controller
     $baseStatus['prizes_available'] = $restantes > 0;
     $baseStatus['prizes_remaining'] = $restantes === PHP_INT_MAX ? null : $restantes;
     $baseStatus['weekly_cap']       = $cap <= 0 ? null : $cap;
+
+    // ⭐ NUEVO: saldo del usuario
+    $balanceField = roulette_balance_field();
+    $baseStatus['balance'] = (float) ($user->{$balanceField} ?? 0);
 
     return response()->json($baseStatus);
 }
