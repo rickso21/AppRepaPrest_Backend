@@ -57,6 +57,18 @@ class RouletteController extends Controller
     return response()->json($baseStatus);
 }
 
+
+
+public function balance(Request $request)
+{
+    $user = $request->user();
+    $balanceField = roulette_balance_field();
+
+    return response()->json([
+        'balance' => (float) ($user->{$balanceField} ?? 0),
+    ]);
+}
+
     // ==================================================================
     // POST /api/roulette/spin
     // ==================================================================

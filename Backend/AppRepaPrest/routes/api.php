@@ -41,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/prizes', [RouletteController::class, 'prizes']);
     Route::get('/status', [RouletteController::class, 'status']);
     Route::post('/spin',  [RouletteController::class, 'spin']);
+    Route::get('/balance', [RouletteController::class, 'balance']);
     });
 
 
