@@ -63,6 +63,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/mapa/estado', [MapaController::class, 'UserStatus']);
     // 4. Activar/Desactivar pánico
     Route::post('/mapa/panico', [MapaController::class, 'On_User_alert']);
+
+    Route::get('/mapa/mi-estado', [MapaController::class, 'MyStatus']);
+
     // Actualizar datos del usuario
     Route::match(['post', 'put'], '/update', [loginController::class, 'edit_user']);
     Route::get('/user/{id}', [loginController::class, 'show_user']);

@@ -417,6 +417,29 @@ if (($estadoActual->estado ?? 'desconectado') === 'conectado') {
         }
     }
 
+
+    /**
+ * GET /mapa/mi-estado
+ */
+public function MyStatus(Request $request)
+{
+    $user = $request->user();
+    if (!$user) {
+        return response()->json(['res' => false, 'msg' => 'No autenticado'], 401);
+    }
+
+    $estado = EstadoRepartidor::where('usuario_id', $user->id)->first();
+
+    return response()->json([
+        'res' => true,
+        'data' => [
+            'usuario_id' => (int) $user->id,
+            'estado' => $estado->estado ?? 'desconectado',
+            'ultima_actualizacion' => $estado->ultima_actualizacion ?? null,
+        ],
+    ]);
+}
+
     /**
      * Emite un evento por WebSocket sin poder romper la operación principal:
      * si Reverb está caído, el pánico / ubicación igual se guardan en BD.
