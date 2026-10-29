@@ -249,14 +249,7 @@ class loginController extends Controller
     // ─── Lógica original intacta ───
     $tokenData = user_crear_token($user);
 
-$ultimaUbicacion = \App\Models\Ubicacion::where('usuario_id', $user->id)
-    ->where('es_activa', true)
-    ->where('created_at', '>=', now()->subMinutes(2))
-    ->first();
 
-if (!$ultimaUbicacion) {
-    repartidor_desconectar_usuario($user->id, 'login reset');
-}
     return response()->json([
         'res'        => true,
         'token'      => $tokenData['token'],

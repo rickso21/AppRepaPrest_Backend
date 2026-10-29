@@ -2303,15 +2303,6 @@ if (!function_exists('repartidor_limite_inactividad')) {
 }
 
 if (!function_exists('repartidor_desconectar_inactivos')) {
-    /**
-     * Marca como desconectados a los repartidores que llevan más de
-     * repartidor_timeout_minutos() sin actualizar ubicación.
-     *
-     * - $grupoId = null  → barre TODA la tabla (cron).
-     * - $grupoId = valor → solo ese grupo (General_location).
-     *
-     * Devuelve el número de repartidores afectados.
-     */
     function repartidor_desconectar_inactivos(?int $grupoId = null): int
     {
         $limite = repartidor_limite_inactividad();
@@ -2329,11 +2320,17 @@ if (!function_exists('repartidor_desconectar_inactivos')) {
             );
         }
 
-        $ids = (clone $query)->pluck('usuario_id');
+        // ✅ Capturar los usuarios ANTES de actualizar (necesitamos grupo_id para el evento)
+        $afectados = (clone $query)
+            ->join('tbl_user as u', 'u.id', '=', 'tbl_estado_repartidor.usuario_id')
+            ->select('tbl_estado_repartidor.usuario_id', 'u.grupo_id')
+            ->get();
 
-        if ($ids->isEmpty()) {
+        if ($afectados->isEmpty()) {
             return 0;
         }
+
+        $ids = $afectados->pluck('usuario_id');
 
         \App\Models\EstadoRepartidor::whereIn('usuario_id', $ids)
             ->update([
@@ -2343,6 +2340,20 @@ if (!function_exists('repartidor_desconectar_inactivos')) {
 
         \App\Models\Ubicacion::whereIn('usuario_id', $ids)
             ->update(['es_activa' => false]);
+
+        // ✅ NUEVO: emitir EstadoCambiado por WebSocket para cada afectado
+        foreach ($afectados as $row) {
+            if (!$row->grupo_id) continue;
+            try {
+                event(new \App\Events\EstadoCambiado(
+                    (int) $row->grupo_id,
+                    (int) $row->usuario_id,
+                    'desconectado'
+                ));
+            } catch (\Throwable $e) {
+                \Log::error('[repartidor] Broadcast falló en cron: ' . $e->getMessage());
+            }
+        }
 
         \Log::info('[repartidor] Auto-desconectados por inactividad', [
             'total'    => $ids->count(),
