@@ -45,8 +45,15 @@ class MapaController extends Controller
             // El rider en bucle de reconexión puede enviar "desconectado" (UserStatus)
             // y luego perderse el "conectado". Con esto, cada ubicación lo marca como
             // conectado, así no queda "desconectado" para siempre.
-            repartidor_marcar_conectado($user->id);
+$estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
 
+// ✅ FIX: NO marcar como conectado si ya estaba desconectado.
+// El rider envió ubicación, pero NO pulsó "Conectar".
+// Solo actualizar la ubicación, NO cambiar el estado.
+if (($estadoActual->estado ?? 'desconectado') === 'conectado') {
+    // Ya estaba conectado → actualizar timestamp para que no se marque inactivo
+    repartidor_marcar_conectado($user->id);
+}
             $estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
 
             if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
@@ -261,35 +268,15 @@ class MapaController extends Controller
             */
 
             if ($estadoDB === 'desconectado') {
-                // ✅ Verificar si sigue enviando ubicación recientemente
-                $ultimaUbicacion = \App\Models\Ubicacion::where('usuario_id', $user->id)
-                    ->where('es_activa', true)
-                    ->where('created_at', '>=', now()->subMinutes(2))
-                    ->first();
+    // ✅ FIX: SIEMPRE respetar la desconexión explícita.
+    // El usuario pulsó "Desconectar" o cerró la app.
+    // NO ignorar por ubicación reciente.
+    repartidor_desconectar_usuario($user->id, 'UserStatus manual');
+} else {
+    repartidor_marcar_conectado($user->id);
+    Ubicacion::where('usuario_id', $user->id)->update(['es_activa' => true]);
+}
 
-                if ($ultimaUbicacion) {
-                    \Log::info('[repartidor] UserStatus desconectado IGNORADO (sigue enviando ubicación)', [
-                        'usuario_id' => $user->id,
-                    ]);
-                    // ✅ FIX: marcar como conectado también (porque sigue enviando ubicación)
-                    repartidor_marcar_conectado($user->id);
-                    return response()->json([
-                        'res' => true,
-                        'msg' => 'Estado ignorado: sigues enviando ubicación',
-                        'data' => [
-                            'usuario_id' => (int) $user->id,
-                            'estado'     => 'conectado',
-                            'hora'       => now()->toISOString(),
-                        ],
-                    ]);
-                }
-
-                repartidor_desconectar_usuario($user->id, 'UserStatus manual');
-            } else {
-                // ✅ FIX: cuando el rider envía "conectado", marcarlo como conectado
-                repartidor_marcar_conectado($user->id);
-                Ubicacion::where('usuario_id', $user->id)->update(['es_activa' => true]);
-            }
             // ──────────────────────────────────
 
             if ($user->grupo_id) {

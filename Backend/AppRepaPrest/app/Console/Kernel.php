@@ -200,25 +200,24 @@ class Kernel extends ConsoleKernel
         // General_location(). Si se deja en General_location, cada snapshot
         // marca al otro rider como desconectado → los marcadores parpadean.
         $schedule->call(function () {
-            try {
-                $afectados = repartidor_desconectar_inactivos();
-
-                if ($afectados > 0) {
-                    Log::info('Cron: Repartidores auto-desconectados por inactividad', [
-                        'cantidad' => $afectados,
-                        'timeout_min' => repartidor_timeout_minutos(),
-                        'fecha' => now()->toDateTimeString(),
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::error('Cron: Error al auto-desconectar repartidores', [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
-            }
-        })->everyFiveMinutes()
-          ->name('repartidor-desconectar-inactivos')
-          ->withoutOverlapping();
+    try {
+        $afectados = repartidor_desconectar_inactivos();
+        if ($afectados > 0) {
+            Log::info('Cron: Repartidores auto-desconectados por inactividad', [
+                'cantidad' => $afectados,
+                'timeout_min' => repartidor_timeout_minutos(),
+                'fecha' => now()->toDateTimeString(),
+            ]);
+        }
+    } catch (\Exception $e) {
+        Log::error('Cron: Error al auto-desconectar repartidores', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+    }
+})->everyMinute()   // ✅ cada 1 min (antes everyFiveMinutes)
+  ->name('repartidor-desconectar-inactivos')
+  ->withoutOverlapping();
     }
 
     protected function commands()
