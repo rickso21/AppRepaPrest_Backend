@@ -136,10 +136,8 @@ class Kernel extends ConsoleKernel
           ->name('reporte-diario-transferencias');
 
         // =============================================
-        // 6. 👇 NUEVO: EXPIRAR ANUNCIOS VENCIDOS
+        // 6. EXPIRAR ANUNCIOS VENCIDOS
         // =============================================
-        // Se ejecuta a las 3 AM todos los días.
-        // Marca como expirados los anuncios cuya fecha 'end_at' ya pasó.
         $schedule->call(function () {
             try {
                 $expirados = \App\Models\Ad::where('status_id', 1)
@@ -169,9 +167,8 @@ class Kernel extends ConsoleKernel
           ->withoutOverlapping();
 
         // =============================================
-        // 7. 👇 NUEVO: LIMPIAR ANUNCIOS RECHAZADOS ANTIGUOS (opcional)
+        // 7. LIMPIAR ANUNCIOS RECHAZADOS ANTIGUOS (opcional)
         // =============================================
-        // Anuncios que nunca se pagaron (status_id = 0) y tienen más de 7 días.
         $schedule->call(function () {
             try {
                 $limpiados = \App\Models\Ad::where('status_id', 0)
@@ -190,6 +187,38 @@ class Kernel extends ConsoleKernel
             }
         })->weekly()
           ->name('limpiar-anuncios-pendientes');
+
+        // =============================================
+        // 8. 👇 NUEVO: AUTO-DESCONECTAR REPARTIDORES INACTIVOS
+        // =============================================
+        // Se ejecuta cada 5 minutos.
+        //
+        // Marca como "desconectado" a los repartidores que llevan más de
+        // REPARTIDOR_TIMEOUT_MIN minutos (default 30) sin enviar ubicación.
+        //
+        // ⚠️ Este cron REEMPLAZA la llamada que antes se hacía dentro de
+        // General_location(). Si se deja en General_location, cada snapshot
+        // marca al otro rider como desconectado → los marcadores parpadean.
+        $schedule->call(function () {
+            try {
+                $afectados = repartidor_desconectar_inactivos();
+
+                if ($afectados > 0) {
+                    Log::info('Cron: Repartidores auto-desconectados por inactividad', [
+                        'cantidad' => $afectados,
+                        'timeout_min' => repartidor_timeout_minutos(),
+                        'fecha' => now()->toDateTimeString(),
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Cron: Error al auto-desconectar repartidores', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        })->everyFiveMinutes()
+          ->name('repartidor-desconectar-inactivos')
+          ->withoutOverlapping();
     }
 
     protected function commands()

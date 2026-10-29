@@ -2287,7 +2287,7 @@ if (!function_exists('repartidor_timeout_minutos')) {
      */
     function repartidor_timeout_minutos(): int
     {
-        return (int) env('REPARTIDOR_TIMEOUT_MIN', 600);
+        return (int) env('REPARTIDOR_TIMEOUT_MIN', 30);
     }
 }
 
