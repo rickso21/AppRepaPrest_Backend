@@ -22,147 +22,152 @@ class MapaController extends Controller
      * POST /mapa/ubicacion
      */
     public function Current_location(Request $request)
-{
-    try {
-        $user = $request->user();
+    {
+        try {
+            $user = $request->user();
 
-        $request->validate([
-            'latitud'  => 'required|numeric|between:-90,90',
-            'longitud' => 'required|numeric|between:-180,180',
-        ]);
+            $request->validate([
+                'latitud'  => 'required|numeric|between:-90,90',
+                'longitud' => 'required|numeric|between:-180,180',
+            ]);
 
-        Ubicacion::updateOrCreate(
-            ['usuario_id' => $user->id],
-            [
-                'latitud'    => $request->latitud,
-                'longitud'   => $request->longitud,
-                'es_activa'  => true,
-                'created_at' => now(),
-            ]
-        );
+            Ubicacion::updateOrCreate(
+                ['usuario_id' => $user->id],
+                [
+                    'latitud'    => $request->latitud,
+                    'longitud'   => $request->longitud,
+                    'es_activa'  => true,
+                    'created_at' => now(),
+                ]
+            );
 
-        // ✅ SOLO actualizar la ubicación, NO tocar el estado.
-        // El estado se marcó en UserStatus cuando el usuario pulsó "Conectar".
-        $estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
+            // ✅ FIX: si envía ubicación, es porque está activo → marcarlo como conectado.
+            // El rider en bucle de reconexión puede enviar "desconectado" (UserStatus)
+            // y luego perderse el "conectado". Con esto, cada ubicación lo marca como
+            // conectado, así no queda "desconectado" para siempre.
+            repartidor_marcar_conectado($user->id);
 
-        if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
-            $this->emitir(new UbicacionActualizada(
-                (int) $user->grupo_id,
-                (int) $user->id,
-                trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
-                (float) $request->latitud,
-                (float) $request->longitud,
-                'conectado',
-                $user->avatar_url,
-                $user->avatar_circular_url,
-            ));
+            $estadoActual = EstadoRepartidor::where('usuario_id', $user->id)->first();
+
+            if (($estadoActual->estado ?? 'desconectado') === 'conectado' && $user->grupo_id) {
+                $this->emitir(new UbicacionActualizada(
+                    (int) $user->grupo_id,
+                    (int) $user->id,
+                    trim($user->nombre . ' ' . ($user->apellido_p ?? '')),
+                    (float) $request->latitud,
+                    (float) $request->longitud,
+                    'conectado',
+                    $user->avatar_url,
+                    $user->avatar_circular_url,
+                ));
+            }
+
+            return response()->json([
+                'res' => true,
+                'msg' => 'Ubicación actualizada',
+                'data' => [
+                    'usuario_id' => $user->id,
+                    'latitud'    => (float) $request->latitud,
+                    'longitud'   => (float) $request->longitud,
+                    'estado'     => $estadoActual->estado ?? 'desconectado',
+                    'hora'       => now()->toISOString(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error actualizando ubicación: ' . $e->getMessage());
+            return response()->json([
+                'res' => false,
+                'msg' => 'Error al actualizar ubicación: ' . $e->getMessage(),
+            ], 500);
         }
-
-        return response()->json([
-            'res' => true,
-            'msg' => 'Ubicación actualizada',
-            'data' => [
-                'usuario_id' => $user->id,
-                'latitud'    => (float) $request->latitud,
-                'longitud'   => (float) $request->longitud,
-                'estado'     => $estadoActual->estado ?? 'desconectado',
-                'hora'       => now()->toISOString(),
-            ],
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Error actualizando ubicación: ' . $e->getMessage());
-        return response()->json([
-            'res' => false,
-            'msg' => 'Error al actualizar ubicación: ' . $e->getMessage(),
-        ], 500);
     }
-}
+
 
     /**
      * GET /mapa/repartidores
      */
     public function General_location(Request $request)
-{
-    try {
-        $user = $request->user();
+    {
+        try {
+            $user = $request->user();
 
-        // ✅ NO ejecutar repartidor_desconectar_inactivos aquí.
-        // Se ejecuta en un cron job cada 5 minutos (ver app/Console/Kernel.php).
+            // ✅ NO ejecutar repartidor_desconectar_inactivos aquí.
+            // Se ejecuta en un cron job cada 5 minutos (ver app/Console/Kernel.php).
 
-        $repartidores = DB::table('tbl_user as u')
-            ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
-            ->leftJoin('tbl_ubicaciones as ub', function ($join) {
-                $join->on('u.id', '=', 'ub.usuario_id')
-                     ->where('ub.es_activa', '=', 1)
-                     ->where('ub.created_at', '>=', repartidor_limite_inactividad());
-            })
-            ->leftJoin('tbl_alertas_panico as ap', function ($join) {
-                $join->on('u.id', '=', 'ap.usuario_id')
-                     ->where('ap.estado', '=', 'activa');
-            })
-            ->where('u.status_id', 1)
-            ->where('er.estado', 'conectado')
-            ->where('u.grupo_id', $user->grupo_id)
-            ->where('u.id', '!=', $user->id)
-            ->select(
-                'u.id',
-                'u.nombre',
-                'u.apellido_p',
-                'u.telefono',
-                'ub.latitud',
-                'ub.longitud',
-                'ub.created_at as ultima_ubicacion',
-                'er.estado as estado_repartidor',
-                'ap.id as alerta_panico_id',
-                'ap.tipo_emergencia',
-                'ap.fecha_activacion as hora_panico'
-            )
-            ->orderBy('ub.created_at', 'desc')
-            ->get();
+            $repartidores = DB::table('tbl_user as u')
+                ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
+                ->leftJoin('tbl_ubicaciones as ub', function ($join) {
+                    $join->on('u.id', '=', 'ub.usuario_id')
+                        ->where('ub.es_activa', '=', 1)
+                        ->where('ub.created_at', '>=', repartidor_limite_inactividad());
+                })
+                ->leftJoin('tbl_alertas_panico as ap', function ($join) {
+                    $join->on('u.id', '=', 'ap.usuario_id')
+                        ->where('ap.estado', '=', 'activa');
+                })
+                ->where('u.status_id', 1)
+                ->where('er.estado', 'conectado')
+                ->where('u.grupo_id', $user->grupo_id)
+                ->where('u.id', '!=', $user->id)
+                ->select(
+                    'u.id',
+                    'u.nombre',
+                    'u.apellido_p',
+                    'u.telefono',
+                    'ub.latitud',
+                    'ub.longitud',
+                    'ub.created_at as ultima_ubicacion',
+                    'er.estado as estado_repartidor',
+                    'ap.id as alerta_panico_id',
+                    'ap.tipo_emergencia',
+                    'ap.fecha_activacion as hora_panico'
+                )
+                ->orderBy('ub.created_at', 'desc')
+                ->get();
 
-        // Mismos accesores que usa el WebSocket → la URL del avatar es IDÉNTICA
-        $usuarios = User::whereIn('id', $repartidores->pluck('id'))
-            ->get()
-            ->keyBy('id');
+            // Mismos accesores que usa el WebSocket → la URL del avatar es IDÉNTICA
+            $usuarios = User::whereIn('id', $repartidores->pluck('id'))
+                ->get()
+                ->keyBy('id');
 
-        $formateados = $repartidores->map(function ($item) use ($usuarios) {
-            $u = $usuarios[$item->id] ?? null;
+            $formateados = $repartidores->map(function ($item) use ($usuarios) {
+                $u = $usuarios[$item->id] ?? null;
 
-            return [
-                'id'                  => (int) $item->id,
-                'nombre'              => trim($item->nombre . ' ' . ($item->apellido_p ?? '')),
-                'telefono'            => $item->telefono ?? '',
-                'avatar_url'          => $u?->avatar_url,
-                'avatar_circular_url' => $u?->avatar_circular_url,
-                'latitud'             => $item->latitud ? (float) $item->latitud : 0,
-                'longitud'            => $item->longitud ? (float) $item->longitud : 0,
-                'estado'              => $item->estado_repartidor ?? 'desconectado',
-                'ultima_ubicacion'    => $item->ultima_ubicacion,
-                'en_panico'           => !is_null($item->alerta_panico_id),
-                'tipo_emergencia'     => $item->tipo_emergencia ?? null,
-                'hora_panico'         => $item->hora_panico ?? null,
-            ];
-        })->values();
+                return [
+                    'id'                  => (int) $item->id,
+                    'nombre'              => trim($item->nombre . ' ' . ($item->apellido_p ?? '')),
+                    'telefono'            => $item->telefono ?? '',
+                    'avatar_url'          => $u?->avatar_url,
+                    'avatar_circular_url' => $u?->avatar_circular_url,
+                    'latitud'             => $item->latitud ? (float) $item->latitud : 0,
+                    'longitud'            => $item->longitud ? (float) $item->longitud : 0,
+                    'estado'              => $item->estado_repartidor ?? 'desconectado',
+                    'ultima_ubicacion'    => $item->ultima_ubicacion,
+                    'en_panico'           => !is_null($item->alerta_panico_id),
+                    'tipo_emergencia'     => $item->tipo_emergencia ?? null,
+                    'hora_panico'         => $item->hora_panico ?? null,
+                ];
+            })->values();
 
-        return response()->json([
-            'res'   => true,
-            'data'  => $formateados,
-            'total' => $formateados->count(),
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Error en obtenerRepartidores:', [
-            'mensaje' => $e->getMessage(),
-            'linea'   => $e->getLine(),
-            'archivo' => $e->getFile(),
-        ]);
+            return response()->json([
+                'res'   => true,
+                'data'  => $formateados,
+                'total' => $formateados->count(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error en obtenerRepartidores:', [
+                'mensaje' => $e->getMessage(),
+                'linea'   => $e->getLine(),
+                'archivo' => $e->getFile(),
+            ]);
 
-        return response()->json([
-            'res'  => false,
-            'msg'  => 'Error al obtener repartidores: ' . $e->getMessage(),
-            'data' => [],
-        ], 500);
+            return response()->json([
+                'res'  => false,
+                'msg'  => 'Error al obtener repartidores: ' . $e->getMessage(),
+                'data' => [],
+            ], 500);
+        }
     }
-}
 
     /**
      * GET /mapa/repartidor/{id}
@@ -176,8 +181,8 @@ class MapaController extends Controller
                 ->join('tbl_estado_repartidor as er', 'u.id', '=', 'er.usuario_id')
                 ->leftJoin('tbl_ubicaciones as ub', function ($join) {
                     $join->on('u.id', '=', 'ub.usuario_id')
-                         ->where('ub.es_activa', '=', 1)
-                         ->where('ub.created_at', '>=', repartidor_limite_inactividad());
+                        ->where('ub.es_activa', '=', 1)
+                        ->where('ub.created_at', '>=', repartidor_limite_inactividad());
                 })
                 ->where('u.id', '=', $id)
                 ->where('u.status_id', 1)
@@ -255,10 +260,34 @@ class MapaController extends Controller
             );
             */
 
-           if ($estadoDB === 'desconectado') {
-        repartidor_desconectar_usuario($user->id, 'UserStatus manual'); // setea estado + es_activa=false
+            if ($estadoDB === 'desconectado') {
+                // ✅ Verificar si sigue enviando ubicación recientemente
+                $ultimaUbicacion = \App\Models\Ubicacion::where('usuario_id', $user->id)
+                    ->where('es_activa', true)
+                    ->where('created_at', '>=', now()->subMinutes(2))
+                    ->first();
+
+                if ($ultimaUbicacion) {
+                    \Log::info('[repartidor] UserStatus desconectado IGNORADO (sigue enviando ubicación)', [
+                        'usuario_id' => $user->id,
+                    ]);
+                    // ✅ FIX: marcar como conectado también (porque sigue enviando ubicación)
+                    repartidor_marcar_conectado($user->id);
+                    return response()->json([
+                        'res' => true,
+                        'msg' => 'Estado ignorado: sigues enviando ubicación',
+                        'data' => [
+                            'usuario_id' => (int) $user->id,
+                            'estado'     => 'conectado',
+                            'hora'       => now()->toISOString(),
+                        ],
+                    ]);
+                }
+
+                repartidor_desconectar_usuario($user->id, 'UserStatus manual');
             } else {
-                repartidor_marcar_conectado($user->id);                          // setea estado + timestamp
+                // ✅ FIX: cuando el rider envía "conectado", marcarlo como conectado
+                repartidor_marcar_conectado($user->id);
                 Ubicacion::where('usuario_id', $user->id)->update(['es_activa' => true]);
             }
             // ──────────────────────────────────
@@ -334,11 +363,17 @@ class MapaController extends Controller
                     $lng = (float) $request->longitud;
 
                     $this->emitir(new PanicoActivado(
-                        $gid, $uid, $nom, $lat, $lng, $request->tipo_emergencia, $aid
+                        $gid,
+                        $uid,
+                        $nom,
+                        $lat,
+                        $lng,
+                        $request->tipo_emergencia,
+                        $aid
                     ));
 
                     // Se ejecuta al terminar la respuesta (sin cola). `static` evita capturar $this.
-                    app()->terminating(static fn () => PanicPush::enviar($gid, $uid, $nom, $aid, $lat, $lng));
+                    app()->terminating(static fn() => PanicPush::enviar($gid, $uid, $nom, $aid, $lat, $lng));
                 }
 
                 return response()->json([

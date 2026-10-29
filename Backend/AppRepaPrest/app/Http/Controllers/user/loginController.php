@@ -81,7 +81,6 @@ class loginController extends Controller
                 'grupo_monitoreo'  => user_grupo_payload($grupoMonitoreo),
                 'user'             => user_formatear_basico($user),
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
 
@@ -141,7 +140,6 @@ class loginController extends Controller
                     ],
                 ],
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[register] Error: ' . $th->getMessage(), [
@@ -183,7 +181,6 @@ class loginController extends Controller
                     'rol_id'          => $user->rol_id,
                 ],
             ], 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[register_comercio] Error: ' . $th->getMessage());
@@ -195,101 +192,117 @@ class loginController extends Controller
     // AUTENTICACIÓN
 
     public function login(loginRequest $request)
-{
-    $user = user_buscar_por_email_o_telefono($request->email);
+    {
+        $user = user_buscar_por_email_o_telefono($request->email);
 
-    if (!$user) {
-        return user_error_response('Usuario no encontrado, vuelve a intentarlo', 404);
-    }
+        if (!$user) {
+            return user_error_response('Usuario no encontrado, vuelve a intentarlo', 404);
+        }
 
-    // ¿Cuenta bloqueada por intentos fallidos?
-    if ($user->locked_until && now()->lt($user->locked_until)) {
-        $remaining = max(1, (int) now()->diffInMinutes($user->locked_until));
-        return user_error_response(
-            "Cuenta bloqueada por seguridad. Intenta de nuevo en {$remaining} minutos.",
-            423
-        );
-    }
-
-    // Verificar estado activo (igual que antes)
-    if ((int) $user->status_id !== user_status_activo()) {
-        return user_error_response(
-            'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
-            403
-        );
-    }
-
-    //Contraseña incorrecta → contar intento
-    if (!Hash::check($request->password, $user->password)) {
-        $user->increment('failed_login_attempts');
-
-        if ($user->failed_login_attempts >= 5) {
-            $user->update([
-                'locked_until'           => now()->addMinutes(30),
-                'failed_login_attempts'  => 0,
-            ]);
-
+        // ¿Cuenta bloqueada por intentos fallidos?
+        if ($user->locked_until && now()->lt($user->locked_until)) {
+            $remaining = max(1, (int) now()->diffInMinutes($user->locked_until));
             return user_error_response(
-                'Demasiados intentos fallidos. Tu cuenta estará bloqueada por 30 minutos.',
+                "Cuenta bloqueada por seguridad. Intenta de nuevo en {$remaining} minutos.",
                 423
             );
         }
 
-        return user_error_response('Contraseña incorrecta.', 401);
-    }
-
-    //Login exitoso → resetear contador de fallos
-    if ($user->failed_login_attempts > 0 || $user->locked_until) {
-        $user->update([
-            'failed_login_attempts' => 0,
-            'locked_until'          => null,
-        ]);
-    }
-
-    // ─── Lógica original intacta ───
-    $tokenData = user_crear_token($user);
-
-    repartidor_desconectar_usuario($user->id, 'login reset');
-
-    return response()->json([
-        'res'        => true,
-        'token'      => $tokenData['token'],
-        'created_at' => $tokenData['created_at'],
-        'expired_at' => $tokenData['expired_at'],
-        'msg'        => numeroAleatorio(1, 10),
-        'user'       => user_formatear_login($user),
-    ], 200);
-}
-
-// AUTENTICACIÓN
-    public function logout(Request $request)
-{
-    $user = $request->user();
-
-    if ($response = user_validate_auth($user)) {
-        return $response;
-    }
-
-    repartidor_desconectar_usuario($user->id, 'logout');
-
-    // ─── NUEVO: emitir WebSocket para que el mapa se actualice en vivo ───
-    if ($user->grupo_id) {
-        try {
-            event(new \App\Events\EstadoCambiado(
-                (int) $user->grupo_id,
-                (int) $user->id,
-                'desconectado'
-            ));
-        } catch (\Throwable $e) {
-            Log::error('Broadcast logout falló: ' . $e->getMessage());
+        // Verificar estado activo (igual que antes)
+        if ((int) $user->status_id !== user_status_activo()) {
+            return user_error_response(
+                'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
+                403
+            );
         }
+
+        //Contraseña incorrecta → contar intento
+        if (!Hash::check($request->password, $user->password)) {
+            $user->increment('failed_login_attempts');
+
+            if ($user->failed_login_attempts >= 5) {
+                $user->update([
+                    'locked_until'           => now()->addMinutes(30),
+                    'failed_login_attempts'  => 0,
+                ]);
+
+                return user_error_response(
+                    'Demasiados intentos fallidos. Tu cuenta estará bloqueada por 30 minutos.',
+                    423
+                );
+            }
+
+            return user_error_response('Contraseña incorrecta.', 401);
+        }
+
+        //Login exitoso → resetear contador de fallos
+        if ($user->failed_login_attempts > 0 || $user->locked_until) {
+            $user->update([
+                'failed_login_attempts' => 0,
+                'locked_until'          => null,
+            ]);
+        }
+
+        // ─── Lógica original intacta ───
+        $tokenData = user_crear_token($user);
+
+        $ultimaUbicacion = \App\Models\Ubicacion::where('usuario_id', $user->id)
+            ->where('es_activa', true)
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->first();
+
+        if (!$ultimaUbicacion) {
+            repartidor_desconectar_usuario($user->id, 'login reset');
+        }
+        return response()->json([
+            'res'        => true,
+            'token'      => $tokenData['token'],
+            'created_at' => $tokenData['created_at'],
+            'expired_at' => $tokenData['expired_at'],
+            'msg'        => numeroAleatorio(1, 10),
+            'user'       => user_formatear_login($user),
+        ], 200);
     }
-    // ─────────────────────────────────────────────────────────────────────
 
-    $request->user()->currentAccessToken()->delete();
+    // AUTENTICACIÓN
+    public function logout(Request $request)
+    {
+        $user = $request->user();
 
-    return user_success_response('Sesión cerrada correctamente');
-}
+        if ($response = user_validate_auth($user)) {
+            return $response;
+        }
+
+        $ultimaUbicacion = \App\Models\Ubicacion::where('usuario_id', $user->id)
+            ->where('es_activa', true)
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->first();
+
+        if (!$ultimaUbicacion) {
+            repartidor_desconectar_usuario($user->id, 'logout');
+
+            // Emitir EstadoCambiado solo si se desconectó
+            if ($user->grupo_id) {
+                try {
+                    event(new \App\Events\EstadoCambiado(
+                        (int) $user->grupo_id,
+                        (int) $user->id,
+                        'desconectado'
+                    ));
+                } catch (\Throwable $e) {
+                    Log::error('Broadcast logout falló: ' . $e->getMessage());
+                }
+            }
+        } else {
+            \Log::info('[repartidor] logout IGNORADO (sigue enviando ubicación)', [
+                'usuario_id' => $user->id,
+            ]);
+        }
+
+        $request->user()->currentAccessToken()->delete();
+
+        return user_success_response('Sesión cerrada correctamente');
+    }
 
     // PERFIL DEL USUARIO
 
@@ -348,11 +361,10 @@ class loginController extends Controller
                     'telefono'        => $user->telefono,
                     'ciudad'          => $user->ciudad,
                     'avatar_url'      => $user->avatar_url,
-                     'avatar_circular_url' => $user->avatar_circular_url,
+                    'avatar_circular_url' => $user->avatar_circular_url,
                     'portada_url'     => $user->portada_url,
                 ],
             ], 200);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[edit_user] Error: ' . $th->getMessage());
@@ -475,7 +487,6 @@ class loginController extends Controller
             return user_success_response(
                 'Tu cuenta ha sido inhabilitada. Si deseas reactivarla, contacta a soporte.'
             );
-
         } catch (\Throwable $th) {
             DB::rollBack();
             Log::error('[delete_account] Error: ' . $th->getMessage());
@@ -533,7 +544,7 @@ class loginController extends Controller
                 'id'         => $u->id,
                 'nombre'     => user_nombre_completo($u),
                 'avatar_url' => $u->avatar_url,
-                 'avatar_circular_url' => $u->avatar_circular_url,
+                'avatar_circular_url' => $u->avatar_circular_url,
                 'telefono'   => $u->telefono,
                 'rol_id'     => $u->rol_id,
             ]);
@@ -548,226 +559,224 @@ class loginController extends Controller
 
     // PUSH TOKENS
 
-   public function savePushToken(Request $request)
-{
-    $user = $request->user();
+    public function savePushToken(Request $request)
+    {
+        $user = $request->user();
 
-    if ($response = user_validate_auth($user)) {
-        return $response;
-    }
+        if ($response = user_validate_auth($user)) {
+            return $response;
+        }
 
 
-    $request->validate([
-        'expo_push_token' => 'required|string|max:255',
-    ]);
-
-    $token = $request->expo_push_token;
-
-    // Limpiar este token de CUALQUIER OTRO usuario
-    //    (el token es del dispositivo, no de la cuenta).
-    //    Sin esto, si Juan cierra sesión sin red y María inicia sesión
-    //    en el mismo dispositivo, ambas filas tendrán el mismo token
-    //    y las push se duplicarán.
-    $cleaned = User::where('expo_push_token', $token)
-        ->where('id', '!=', $user->id)
-        ->update([
-            'expo_push_token'       => null,
-            'push_token_updated_at' => now(),
+        $request->validate([
+            'expo_push_token' => 'required|string|max:255',
         ]);
 
-    // Asignar el token al usuario actual
-    $user->expo_push_token       = $token;
-    $user->push_token_updated_at = now();
-    $user->save();
+        $token = $request->expo_push_token;
 
-    Log::info('[push-token] registrado', [
-        'user_id'         => $user->id,
-        'token'           => $token,
-        'otros_limpiados' => $cleaned,
-    ]);
-
-    return user_success_response('Token guardado correctamente');
-}
-
-public function deletePushToken(Request $request)
-{
-    $user = $request->user();
-
-    if ($response = user_validate_auth($user)) {
-        return $response;
-    }
-
-    $token = $request->input('expo_push_token');
-
-    Log::info('[push-token] delete solicitado', [
-        'user_id' => $user->id,
-        'token'   => $token,
-    ]);
-
-    if ($token) {
-
-        //    El token es del dispositivo: si el usuario cerró sesión,
-        //    ya no debe estar asociado a nadie.
-        $affected = User::where('expo_push_token', $token)
+        // Limpiar este token de CUALQUIER OTRO usuario
+        //    (el token es del dispositivo, no de la cuenta).
+        //    Sin esto, si Juan cierra sesión sin red y María inicia sesión
+        //    en el mismo dispositivo, ambas filas tendrán el mismo token
+        //    y las push se duplicarán.
+        $cleaned = User::where('expo_push_token', $token)
+            ->where('id', '!=', $user->id)
             ->update([
                 'expo_push_token'       => null,
                 'push_token_updated_at' => now(),
             ]);
 
-        Log::info("[push-token] filas actualizadas: {$affected}");
-
-        if ($affected === 0) {
-            Log::warning('[push-token] ⚠️ El token NO existía en la BD', [
-                'token' => $token,
-            ]);
-        }
-    } else {
-        // Fallback: solo borra el token del usuario autenticado
-        $user->expo_push_token       = null;
+        // Asignar el token al usuario actual
+        $user->expo_push_token       = $token;
         $user->push_token_updated_at = now();
         $user->save();
-        Log::info('[push-token] token del user actual limpiado (sin body)');
+
+        Log::info('[push-token] registrado', [
+            'user_id'         => $user->id,
+            'token'           => $token,
+            'otros_limpiados' => $cleaned,
+        ]);
+
+        return user_success_response('Token guardado correctamente');
     }
 
-    return user_success_response('Token eliminado correctamente');
-}
+    public function deletePushToken(Request $request)
+    {
+        $user = $request->user();
 
-
-// ================================================================
-// EDITAR COMERCIO
-// ================================================================
-public function update_merchant(Request $request)
-{
-    $user_token = $request->user();
-
-    if ($response = user_validate_auth($user_token)) {
-        return $response;
-    }
-
-    if ((int) $user_token->rol_id !== 4) {
-        return user_error_response('Solo comercios pueden editar su información.', 403);
-    }
-
-    $request->validate([
-        'nombre'          => 'required|string|max:100',
-        'apellido_p'      => 'nullable|string|max:100',
-        'apellido_m'      => 'nullable|string|max:100',
-        'nombre_comercio' => 'required|string|max:150',
-        'telefono'        => 'nullable|string|max:20',
-        'ciudad'          => 'nullable|string|max:50',
-    ]);
-
-    try {
-        $user = User::findOrFail($user_token->id);
-
-        // Validar email/teléfono únicos si cambian
-        if ($request->filled('email') && $request->email !== $user->email) {
-            $exists = User::where('email', $request->email)
-                ->where('id', '!=', $user->id)
-                ->exists();
-            if ($exists) {
-                return user_error_response('El correo ya está registrado por otro usuario', 409);
-            }
-            $user->email = $request->email;
+        if ($response = user_validate_auth($user)) {
+            return $response;
         }
 
-        if ($request->filled('telefono') && $request->telefono !== $user->telefono) {
-            $exists = User::where('telefono', $request->telefono)
-                ->where('id', '!=', $user->id)
-                ->exists();
-            if ($exists) {
-                return user_error_response('El teléfono ya está registrado por otro usuario', 409);
+        $token = $request->input('expo_push_token');
+
+        Log::info('[push-token] delete solicitado', [
+            'user_id' => $user->id,
+            'token'   => $token,
+        ]);
+
+        if ($token) {
+
+            //    El token es del dispositivo: si el usuario cerró sesión,
+            //    ya no debe estar asociado a nadie.
+            $affected = User::where('expo_push_token', $token)
+                ->update([
+                    'expo_push_token'       => null,
+                    'push_token_updated_at' => now(),
+                ]);
+
+            Log::info("[push-token] filas actualizadas: {$affected}");
+
+            if ($affected === 0) {
+                Log::warning('[push-token] ⚠️ El token NO existía en la BD', [
+                    'token' => $token,
+                ]);
             }
-            $user->telefono = $request->telefono;
+        } else {
+            // Fallback: solo borra el token del usuario autenticado
+            $user->expo_push_token       = null;
+            $user->push_token_updated_at = now();
+            $user->save();
+            Log::info('[push-token] token del user actual limpiado (sin body)');
         }
 
-        // Actualizar campos básicos
-        $user->nombre          = trim($request->nombre);
-        $user->apellido_p      = $request->apellido_p ? trim($request->apellido_p) : null;
-        $user->apellido_m      = $request->apellido_m ? trim($request->apellido_m) : null;
-        $user->nombre_comercio = trim($request->nombre_comercio);
-        $user->ciudad          = $request->ciudad ? trim($request->ciudad) : null;
-
-        $user->save();
-
-        return response()->json([
-            'res'  => true,
-            'msg'  => 'Información del comercio actualizada correctamente.',
-            'user' => [
-                'id'              => $user->id,
-                'nombre'          => $user->nombre,
-                'nombre_completo' => trim(
-                    $user->nombre . ' ' . ($user->apellido_p ?? '') . ' ' . ($user->apellido_m ?? '')
-                ),
-                'nombre_comercio' => $user->nombre_comercio,
-                'email'           => $user->email,
-                'telefono'        => $user->telefono,
-                'ciudad'          => $user->ciudad,
-                'avatar_url'      => $user->avatar_url,
-            ],
-        ], 200);
-
-    } catch (\Throwable $th) {
-        \Log::error('[update_merchant] Error: ' . $th->getMessage());
-
-        return user_error_response(
-            'Error al actualizar el comercio: ' . $th->getMessage(),
-            500
-        );
-    }
-}
-
-// ================================================================
-// ELIMINAR (INHABILITAR) COMERCIO
-// ================================================================
-public function delete_merchant(Request $request)
-{
-    $user_token = $request->user();
-
-    if ($response = user_validate_auth($user_token)) {
-        return $response;
+        return user_success_response('Token eliminado correctamente');
     }
 
-    if ((int) $user_token->rol_id !== 4) {
-        return user_error_response('Solo comercios pueden eliminar su cuenta.', 403);
+
+    // ================================================================
+    // EDITAR COMERCIO
+    // ================================================================
+    public function update_merchant(Request $request)
+    {
+        $user_token = $request->user();
+
+        if ($response = user_validate_auth($user_token)) {
+            return $response;
+        }
+
+        if ((int) $user_token->rol_id !== 4) {
+            return user_error_response('Solo comercios pueden editar su información.', 403);
+        }
+
+        $request->validate([
+            'nombre'          => 'required|string|max:100',
+            'apellido_p'      => 'nullable|string|max:100',
+            'apellido_m'      => 'nullable|string|max:100',
+            'nombre_comercio' => 'required|string|max:150',
+            'telefono'        => 'nullable|string|max:20',
+            'ciudad'          => 'nullable|string|max:50',
+        ]);
+
+        try {
+            $user = User::findOrFail($user_token->id);
+
+            // Validar email/teléfono únicos si cambian
+            if ($request->filled('email') && $request->email !== $user->email) {
+                $exists = User::where('email', $request->email)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+                if ($exists) {
+                    return user_error_response('El correo ya está registrado por otro usuario', 409);
+                }
+                $user->email = $request->email;
+            }
+
+            if ($request->filled('telefono') && $request->telefono !== $user->telefono) {
+                $exists = User::where('telefono', $request->telefono)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+                if ($exists) {
+                    return user_error_response('El teléfono ya está registrado por otro usuario', 409);
+                }
+                $user->telefono = $request->telefono;
+            }
+
+            // Actualizar campos básicos
+            $user->nombre          = trim($request->nombre);
+            $user->apellido_p      = $request->apellido_p ? trim($request->apellido_p) : null;
+            $user->apellido_m      = $request->apellido_m ? trim($request->apellido_m) : null;
+            $user->nombre_comercio = trim($request->nombre_comercio);
+            $user->ciudad          = $request->ciudad ? trim($request->ciudad) : null;
+
+            $user->save();
+
+            return response()->json([
+                'res'  => true,
+                'msg'  => 'Información del comercio actualizada correctamente.',
+                'user' => [
+                    'id'              => $user->id,
+                    'nombre'          => $user->nombre,
+                    'nombre_completo' => trim(
+                        $user->nombre . ' ' . ($user->apellido_p ?? '') . ' ' . ($user->apellido_m ?? '')
+                    ),
+                    'nombre_comercio' => $user->nombre_comercio,
+                    'email'           => $user->email,
+                    'telefono'        => $user->telefono,
+                    'ciudad'          => $user->ciudad,
+                    'avatar_url'      => $user->avatar_url,
+                ],
+            ], 200);
+        } catch (\Throwable $th) {
+            \Log::error('[update_merchant] Error: ' . $th->getMessage());
+
+            return user_error_response(
+                'Error al actualizar el comercio: ' . $th->getMessage(),
+                500
+            );
+        }
     }
 
-    try {
-        DB::beginTransaction();
+    // ================================================================
+    // ELIMINAR (INHABILITAR) COMERCIO
+    // ================================================================
+    public function delete_merchant(Request $request)
+    {
+        $user_token = $request->user();
 
-        $user = User::findOrFail($user_token->id);
+        if ($response = user_validate_auth($user_token)) {
+            return $response;
+        }
 
-        // 1. Desactivar todos los anuncios del comercio
-        \App\Models\Ad::where('merchant_id', $user->id)
-            ->update(['status_id' => 2]); // status_id 2 = Expirado
+        if ((int) $user_token->rol_id !== 4) {
+            return user_error_response('Solo comercios pueden eliminar su cuenta.', 403);
+        }
 
-        // 2. Marcar la suscripción como cancelada
-        \App\Models\Subscription::where('user_id', $user->id)
-            ->where('status', 'active')
-            ->update(['status' => 'cancelled']);
+        try {
+            DB::beginTransaction();
 
-        // 3. Marcar el usuario como inactivo
-        $user->status_id = user_status_inactivo();
-        $user->save();
+            $user = User::findOrFail($user_token->id);
 
-        // 4. Revocar tokens activos
-        $user->tokens()->delete();
+            // 1. Desactivar todos los anuncios del comercio
+            \App\Models\Ad::where('merchant_id', $user->id)
+                ->update(['status_id' => 2]); // status_id 2 = Expirado
 
-        DB::commit();
+            // 2. Marcar la suscripción como cancelada
+            \App\Models\Subscription::where('user_id', $user->id)
+                ->where('status', 'active')
+                ->update(['status' => 'cancelled']);
 
-        return response()->json([
-            'res' => true,
-            'msg' => 'Tu cuenta de comercio ha sido desactivada. Tus anuncios ya no serán visibles.',
-        ], 200);
+            // 3. Marcar el usuario como inactivo
+            $user->status_id = user_status_inactivo();
+            $user->save();
 
-    } catch (\Throwable $th) {
-        DB::rollBack();
-        \Log::error('[delete_merchant] Error: ' . $th->getMessage());
+            // 4. Revocar tokens activos
+            $user->tokens()->delete();
 
-        return user_error_response(
-            'Error al eliminar la cuenta: ' . $th->getMessage(),
-            500
-        );
+            DB::commit();
+
+            return response()->json([
+                'res' => true,
+                'msg' => 'Tu cuenta de comercio ha sido desactivada. Tus anuncios ya no serán visibles.',
+            ], 200);
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            \Log::error('[delete_merchant] Error: ' . $th->getMessage());
+
+            return user_error_response(
+                'Error al eliminar la cuenta: ' . $th->getMessage(),
+                500
+            );
+        }
     }
-}
 }
