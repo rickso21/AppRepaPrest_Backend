@@ -31,9 +31,10 @@ class LiveKitController extends Controller
 
         $grant = (new VideoGrant())
             ->setRoomJoin()
-            ->setRoomName('grupo-' . $user->grupo_id)   // una sala por grupo
+            ->setRoomName('grupo-' . $user->grupo_id)
             ->setCanPublish(true)
-            ->setCanSubscribe(true);
+            ->setCanSubscribe(true)
+            ->setRoomAdmin(false);
 
         $jwt = (new AccessToken(config('services.livekit.key'), config('services.livekit.secret')))
             ->init($opts)->setGrant($grant)->toJwt();
