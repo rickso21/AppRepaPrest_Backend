@@ -194,7 +194,7 @@ class loginController extends Controller
 
     // AUTENTICACIÓN
 
-    public function login(loginRequest $request)
+   public function login(loginRequest $request)
 {
     $user = user_buscar_por_email_o_telefono($request->email);
 
@@ -211,7 +211,7 @@ class loginController extends Controller
         );
     }
 
-    // Verificar estado activo (igual que antes)
+    // Verificar estado activo
     if ((int) $user->status_id !== user_status_activo()) {
         return user_error_response(
             'Tu cuenta está inhabilitada. Contacta a soporte para reactivarla.',
@@ -219,14 +219,14 @@ class loginController extends Controller
         );
     }
 
-    //Contraseña incorrecta → contar intento
+    // Contraseña incorrecta → contar intento
     if (!Hash::check($request->password, $user->password)) {
         $user->increment('failed_login_attempts');
 
         if ($user->failed_login_attempts >= 5) {
             $user->update([
-                'locked_until'           => now()->addMinutes(30),
-                'failed_login_attempts'  => 0,
+                'locked_until'          => now()->addMinutes(30),
+                'failed_login_attempts' => 0,
             ]);
 
             return user_error_response(
@@ -238,7 +238,7 @@ class loginController extends Controller
         return user_error_response('Contraseña incorrecta.', 401);
     }
 
-    //Login exitoso → resetear contador de fallos
+    // Login exitoso → resetear contador de fallos
     if ($user->failed_login_attempts > 0 || $user->locked_until) {
         $user->update([
             'failed_login_attempts' => 0,
@@ -246,20 +246,52 @@ class loginController extends Controller
         ]);
     }
 
-    // ─── Lógica original intacta ───
+    $tokensRevocados = 0;
+
+    DB::transaction(function () use ($user, &$tokensRevocados) {
+        // Bloquea la fila del usuario para evitar race conditions
+        // (dos logins simultáneos desde A y B).
+        User::where('id', $user->id)->lockForUpdate()->first();
+
+        // Borra TODOS los tokens activos del usuario.
+        // Cualquier dispositivo que estaba logueado (A) perderá acceso
+        // en su siguiente request → Sanctum devolverá 401.
+        $tokensRevocados = $user->tokens()->delete();
+    });
+
+    // Avisar en vivo (WebSocket) al dispositivo A que fue desconectado
+    if ($tokensRevocados > 0 && $user->grupo_id) {
+        try {
+            event(new \App\Events\EstadoCambiado(
+                (int) $user->grupo_id,
+                (int) $user->id,
+                'desconectado'
+            ));
+        } catch (\Throwable $e) {
+            Log::error('Broadcast logout (nuevo login) falló: ' . $e->getMessage());
+        }
+    }
+
+    Log::info('[login] sesión única', [
+        'user_id'          => $user->id,
+        'tokens_revocados' => $tokensRevocados,
+        'ip'               => $request->ip(),
+        'user_agent'       => $request->userAgent(),
+    ]);
+
+    // Crear el nuevo token para el dispositivo B
     $tokenData = user_crear_token($user);
 
-
     return response()->json([
-        'res'        => true,
-        'token'      => $tokenData['token'],
-        'created_at' => $tokenData['created_at'],
-        'expired_at' => $tokenData['expired_at'],
-        'msg'        => numeroAleatorio(1, 10),
-        'user'       => user_formatear_login($user),
+        'res'              => true,
+        'token'            => $tokenData['token'],
+        'created_at'       => $tokenData['created_at'],
+        'expired_at'       => $tokenData['expired_at'],
+        'msg'              => numeroAleatorio(1, 10),
+        'session_replaced' => $tokensRevocados > 0,
+        'user'             => user_formatear_login($user),
     ], 200);
 }
-
 // AUTENTICACIÓN
     public function logout(Request $request)
 {

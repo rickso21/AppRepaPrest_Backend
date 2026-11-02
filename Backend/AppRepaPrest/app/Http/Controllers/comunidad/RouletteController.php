@@ -55,7 +55,7 @@ class RouletteController extends Controller
     $baseStatus['prizes_remaining'] = $restantes === PHP_INT_MAX ? null : $restantes;
     $baseStatus['weekly_cap']       = $cap <= 0 ? null : $cap;
 
-    // ⭐ NUEVO: saldo del usuario
+    //NUEVO: saldo del usuario
     $balanceField = roulette_balance_field();
     $baseStatus['balance'] = (float) ($user->{$balanceField} ?? 0);
 
