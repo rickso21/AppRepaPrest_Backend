@@ -106,8 +106,6 @@ class pagoController extends Controller
                 ->where('status', 0)
                 ->first();
 
-
-
             // SI EXISTE PAGO PENDIENTE, ACTUALIZARLO EN LUGAR DE CREAR UNO NUEVO
             if ($pagoPendiente) {
                 // ACTUALIZAR EL PAGO EXISTENTE
@@ -168,13 +166,13 @@ class pagoController extends Controller
                             'email' => $user_token->email ?? 'cliente@email.com',
                         ],
                         'back_urls' => [
-                            'success' => $frontendUrl,  // https://deliverysobreruedas.com
-                            'failure' => $frontendUrl,
-                            'pending' => $frontendUrl,
+                            'success' => "{$frontendUrl}",
+                            'failure' => "{$frontendUrl}",
+                            'pending' => "{$frontendUrl}",
                         ],
                         'notification_url'   => $notificationUrl,
                         'external_reference' => (string) $pagoPendiente->id,
-                        'auto_return' => 'approved',
+                        'auto_return'        => 'approved',
                     ];
 
                     $ch = curl_init();
@@ -327,9 +325,9 @@ class pagoController extends Controller
                     'email' => $user_token->email ?? 'cliente@email.com',
                 ],
                 'back_urls' => [
-                    'success' => $frontendUrl,  // https://deliverysobreruedas.com
-                    'failure' => $frontendUrl,
-                    'pending' => $frontendUrl,
+                    'success' => "{$frontendUrl}",
+                    'failure' => "{$frontendUrl}",
+                    'pending' => "{$frontendUrl}",
                 ],
                 'notification_url'   => $notificationUrl,
                 'external_reference' => (string) $pago->id,
