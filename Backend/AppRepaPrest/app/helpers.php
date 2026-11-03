@@ -490,23 +490,27 @@ if (!function_exists('tasa_segun_plazo')) {
     function tasa_segun_plazo($quincenas)
     {
         $tasas = [
-            1 => 0.0925,   // 9.25%
-            2 => 0.1000,   // 10.00%
-            3 => 0.1100,   // 11.00%
-            4 => 0.1200,   // 12.00%
-            5 => 0.1300,   // 13.00%
-            6 => 0.1400,   // 14.00%
-            7 => 0.1500,   // 15.00%
-            9 => 0.1600,   // 16.00%
+            1  => 0.1800,   // 18.00%
+            2  => 0.2000,   // 20.00%
+            3  => 0.2200,   // 22.00%
+            4  => 0.2400,   // 24.00%
+            5  => 0.2600,   // 26.00%
+            6  => 0.2800,   // 28.00%
+            7  => 0.3000,   // 30.00%
+            8  => 0.3200,   // 32.00%
+            9  => 0.3400,   // 34.00%
+            10 => 0.3500,   // 35.00% (tope de la tabla)
         ];
 
+        $quincenas = (int) $quincenas;
+
         if ($quincenas > 10) {
-            $base = 0.1600;
-            $incremento = ($quincenas - 10) * 0.005;
-            return min($base + $incremento, 0.3500);
+            // Para plazos > 10, tope global del 35%
+            return 0.3500;
         }
 
-        return $tasas[$quincenas] ?? 0.0795;
+        // Fallback: si viene un valor raro (0, negativo, etc.), usar 1 quincena
+        return $tasas[$quincenas] ?? 0.1800;
     }
 }
 
