@@ -40,3 +40,8 @@ Broadcast::channel('grupo.{grupoId}', $autorizarGrupo);
 
 // Se conserva el nombre anterior por compatibilidad (si algo más lo usa)
 Broadcast::channel('group.{groupId}', $autorizarGrupo);
+
+
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});

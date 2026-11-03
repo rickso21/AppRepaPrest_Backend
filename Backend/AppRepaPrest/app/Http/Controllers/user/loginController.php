@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use App\Events\SesionCerrada;
+use App\Events\EstadoCambiado;
 
 class loginController extends Controller
 {
@@ -246,31 +248,44 @@ class loginController extends Controller
         ]);
     }
 
-    $tokensRevocados = 0;
+   // ────────────────────────────────────────────────────────────
+// 🔒 SESIÓN ÚNICA: revocar tokens previos (cierra sesión en A)
+// ────────────────────────────────────────────────────────────
+$tokensRevocados = 0;
+$tokensIds = [];
 
-    DB::transaction(function () use ($user, &$tokensRevocados) {
-        // Bloquea la fila del usuario para evitar race conditions
-        // (dos logins simultáneos desde A y B).
-        User::where('id', $user->id)->lockForUpdate()->first();
+DB::transaction(function () use ($user, &$tokensRevocados, &$tokensIds) {
+    User::where('id', $user->id)->lockForUpdate()->first();
 
-        // Borra TODOS los tokens activos del usuario.
-        // Cualquier dispositivo que estaba logueado (A) perderá acceso
-        // en su siguiente request → Sanctum devolverá 401.
-        $tokensRevocados = $user->tokens()->delete();
-    });
+    // Guardamos los IDs antes de borrar (para logs, opcional)
+    $tokensIds = $user->tokens()->pluck('id')->all();
+    $tokensRevocados = $user->tokens()->delete();
+});
 
-    // Avisar en vivo (WebSocket) al dispositivo A que fue desconectado
-    if ($tokensRevocados > 0 && $user->grupo_id) {
-        try {
-            event(new \App\Events\EstadoCambiado(
-                (int) $user->grupo_id,
-                (int) $user->id,
-                'desconectado'
-            ));
-        } catch (\Throwable $e) {
-            Log::error('Broadcast logout (nuevo login) falló: ' . $e->getMessage());
-        }
+// 🆕 Avisar en tiempo real al dispositivo A (WebSocket)
+if ($tokensRevocados > 0) {
+    try {
+        event(new \App\Events\SesionCerrada(
+            (int) $user->id,
+            'session_replaced'
+        ));
+    } catch (\Throwable $e) {
+        Log::error('Broadcast SesionCerrada falló: ' . $e->getMessage());
     }
+}
+
+// El resto del flujo (event EstadoCambiado al grupo, si lo usas) sigue igual.
+if ($tokensRevocados > 0 && $user->grupo_id) {
+    try {
+        event(new \App\Events\EstadoCambiado(
+            (int) $user->grupo_id,
+            (int) $user->id,
+            'desconectado'
+        ));
+    } catch (\Throwable $e) {
+        Log::error('Broadcast EstadoCambiado (nuevo login) falló: ' . $e->getMessage());
+    }
+}
 
     Log::info('[login] sesión única', [
         'user_id'          => $user->id,
