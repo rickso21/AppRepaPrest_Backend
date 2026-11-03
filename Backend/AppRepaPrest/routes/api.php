@@ -22,6 +22,15 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth:sanctum')->group(function () {
 
+  Route::get('/user/session-ping', function (Request $request) {
+        return response()->json([
+            'res'      => true,
+            'ts'       => now()->toIso8601String(),
+            'user_id'  => $request->user()->id,
+            'token_id' => optional($request->user()->currentAccessToken())->id,
+        ]);
+    });
+
     Route::prefix('ads')->group(function () {
         Route::get('/', [AdController::class, 'index']);
         Route::get('/my-ads', [AdController::class, 'myAds']);
