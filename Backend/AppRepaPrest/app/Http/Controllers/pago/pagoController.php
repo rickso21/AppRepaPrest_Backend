@@ -20,96 +20,259 @@ class pagoController extends Controller
      * REGISTRAR UN PAGO/ABONO AL PRÉSTAMO (ASESOR)
      */
     public function registrarPago(Request $request)
-{
-    try {
-        $user_token = $request->user();
+    {
+        try {
+            $user_token = $request->user();
 
-        if (! $user_token) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Usuario no autenticado',
-            ], 401);
-        }
-
-        $request->validate([
-            'usuario_id'         => 'required|exists:tbl_user,id',
-            'monto_pago'         => 'required|numeric|min:1',
-            'referencia'         => 'nullable|string|max:100',
-            'observaciones'      => 'nullable|string|max:500',
-            'es_pago_adelantado' => 'nullable|boolean',
-            'metodo_pago'        => 'nullable|string|max:50',
-        ]);
-
-        $prestamo = Prestamo::where('usuario_id', $request->usuario_id)
-            ->whereIn('estado_prestamo_id', [2, 3])
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if (! $prestamo) {
-            return response()->json([
-                'success' => false,
-                'message' => 'El usuario no tiene un préstamo aprobado para realizar pagos',
-            ], 404);
-        }
-
-        if (in_array($prestamo->estado_prestamo_id, [3, 4])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Este préstamo ya está ' . getEstadoTexto($prestamo->estado_prestamo_id),
-            ], 400);
-        }
-
-        $es_pago_adelantado = $request->es_pago_adelantado ?? false;
-
-        if ($prestamo->estado_prestamo_id == 2) {
-            $validacion = validarFechaDesembolso($prestamo, $es_pago_adelantado);
-
-            if (! $validacion['valido']) {
+            if (! $user_token) {
                 return response()->json([
                     'success' => false,
-                    'message' => $validacion['message'],
+                    'message' => 'Usuario no autenticado',
+                ], 401);
+            }
+
+            $request->validate([
+                'usuario_id'         => 'required|exists:tbl_user,id',
+                'monto_pago'         => 'required|numeric|min:1',
+                'referencia'         => 'nullable|string|max:100',
+                'observaciones'      => 'nullable|string|max:500',
+                'es_pago_adelantado' => 'nullable|boolean',
+                'metodo_pago'        => 'nullable|string|max:50',
+            ]);
+
+            $prestamo = Prestamo::where('usuario_id', $request->usuario_id)
+                ->whereIn('estado_prestamo_id', [2, 3])
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if (! $prestamo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El usuario no tiene un préstamo aprobado para realizar pagos',
+                ], 404);
+            }
+
+            if (in_array($prestamo->estado_prestamo_id, [3, 4])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Este préstamo ya está ' . getEstadoTexto($prestamo->estado_prestamo_id),
                 ], 400);
             }
-        }
 
-        $deuda_actual = $prestamo->monto_restante ?? $prestamo->monto_total_pagar;
+            $es_pago_adelantado = $request->es_pago_adelantado ?? false;
 
-        if ($request->monto_pago > $deuda_actual) {
-            return response()->json([
-                'success'      => false,
-                'message'      => 'El monto del pago excede la deuda actual',
-                'deuda_actual' => $deuda_actual,
-                'monto_maximo' => $deuda_actual,
-            ], 400);
-        }
+            if ($prestamo->estado_prestamo_id == 2) {
+                $validacion = validarFechaDesembolso($prestamo, $es_pago_adelantado);
 
-        // Validación saldo mínimo permitido
-        $validacion_saldo = validarSaldoMinimo($deuda_actual, $request->monto_pago, 10);
+                if (! $validacion['valido']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $validacion['message'],
+                    ], 400);
+                }
+            }
 
-        if (! $validacion_saldo['valido']) {
-            return response()->json([
-                'success'            => false,
-                'message'            => $validacion_saldo['message'],
-                'deuda_actual'       => $deuda_actual,
-                'monto_solicitado'   => $request->monto_pago,
-                'saldo_resultante'   => $validacion_saldo['saldo_resultante'],
-                'saldo_minimo'       => $validacion_saldo['saldo_minimo'] ?? 10,
-                'opciones'           => [
-                    'liquidar'          => $validacion_saldo['monto_para_liquidar'] ?? $deuda_actual,
-                    'dejar_saldo_minimo' => $validacion_saldo['monto_para_dejar_minimo'] ?? ($deuda_actual - 10),
-                ],
-            ], 400);
-        }
+            $deuda_actual = $prestamo->monto_restante ?? $prestamo->monto_total_pagar;
 
-        //BUSCAR PAGO PENDIENTE (FIX 1: orderBy id DESC para no tomar pagos fantasma)
-        $pagoPendiente = Pago::where('prestamo_id', $prestamo->id)
-            ->where('status', 0)
-            ->orderBy('id', 'desc')
-            ->first();
+            if ($request->monto_pago > $deuda_actual) {
+                return response()->json([
+                    'success'      => false,
+                    'message'      => 'El monto del pago excede la deuda actual',
+                    'deuda_actual' => $deuda_actual,
+                    'monto_maximo' => $deuda_actual,
+                ], 400);
+            }
 
-        // SI EXISTE PAGO PENDIENTE, ACTUALIZARLO EN LUGAR DE CREAR UNO NUEVO
-        if ($pagoPendiente) {
-            // ACTUALIZAR EL PAGO EXISTENTE
+            // Validación saldo mínimo permitido
+            $validacion_saldo = validarSaldoMinimo($deuda_actual, $request->monto_pago, 10);
+
+            if (! $validacion_saldo['valido']) {
+                return response()->json([
+                    'success'            => false,
+                    'message'            => $validacion_saldo['message'],
+                    'deuda_actual'       => $deuda_actual,
+                    'monto_solicitado'   => $request->monto_pago,
+                    'saldo_resultante'   => $validacion_saldo['saldo_resultante'],
+                    'saldo_minimo'       => $validacion_saldo['saldo_minimo'] ?? 10,
+                    'opciones'           => [
+                        'liquidar'          => $validacion_saldo['monto_para_liquidar'] ?? $deuda_actual,
+                        'dejar_saldo_minimo' => $validacion_saldo['monto_para_dejar_minimo'] ?? ($deuda_actual - 10),
+                    ],
+                ], 400);
+            }
+
+            // ✅ FIX: Buscar pago pendiente ordenando por el más reciente
+            $pagoPendiente = Pago::where('prestamo_id', $prestamo->id)
+                ->where('status', 0)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            // SI EXISTE PAGO PENDIENTE, ACTUALIZARLO EN LUGAR DE CREAR UNO NUEVO
+            if ($pagoPendiente) {
+                // ACTUALIZAR EL PAGO EXISTENTE
+                $nuevo_restante = $deuda_actual - $request->monto_pago;
+                $nuevos_pagos   = ($prestamo->pagos_realizados ?? 0) + 1;
+                $pago_quincenal = $prestamo->monto_total_pagar / $prestamo->numero_pagos;
+
+                $tipo_pago = 'normal';
+                if ($es_pago_adelantado || $request->monto_pago > $pago_quincenal) {
+                    $tipo_pago = 'anticipado';
+                }
+                if ($nuevo_restante <= 0) {
+                    $tipo_pago = 'completo';
+                }
+
+                // Actualizar los datos del pago
+                $pagoPendiente->monto_pagado     = $request->monto_pago;
+                $pagoPendiente->monto_restante   = $nuevo_restante;
+                $pagoPendiente->saldo_antes_pago = $deuda_actual;
+                $pagoPendiente->tipo_pago        = $tipo_pago;
+                $pagoPendiente->es_adelantado    = $es_pago_adelantado;
+                $pagoPendiente->numero_quincena  = $nuevos_pagos;
+                $pagoPendiente->referencia       = $request->referencia;
+                $pagoPendiente->observaciones    = $request->observaciones;
+                $pagoPendiente->metodo_pago      = $request->metodo_pago ?? 'Mercado Pago';
+
+                // ✅ RESET mínimo (sin tocar campos que podrían ser NOT NULL)
+                $pagoPendiente->status             = 0;
+                $pagoPendiente->status_mp          = 'pending';
+                $pagoPendiente->estado_pago        = 'pendiente';
+                $pagoPendiente->fecha_confirmacion = null;
+
+                $pagoPendiente->save();
+
+                // ✅ SIEMPRE generar preferencia (sin importar si tenía preference_id)
+                $token = config('services.mercadopago.access_token');
+
+                if (empty($token) || $token === 'null') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Token de Mercado Pago no configurado',
+                    ], 500);
+                }
+
+                $isSandbox = config('app.env') !== 'production';
+
+                $notificationUrl = config('services.mercadopago.notification_url');
+                $frontendUrl     = rtrim(config('services.mercadopago.frontend_url'), '/');
+
+                $preferenceData = [
+                    'items' => [
+                        [
+                            'id'          => 'pago_prestamo_' . $pagoPendiente->id,
+                            'title'       => 'Pago de préstamo - Folio: ' . $prestamo->folio,
+                            'description' => 'Pago quincenal de préstamo #' . $prestamo->folio,
+                            'quantity'    => 1,
+                            'unit_price'  => (float) $request->monto_pago,
+                            'currency_id' => 'MXN',
+                        ],
+                    ],
+                    'payer' => [
+                        'name'  => $user_token->name ?? 'Cliente',
+                        'email' => $user_token->email ?? 'cliente@email.com',
+                    ],
+                    'back_urls' => [
+                        'success' => $frontendUrl,
+                        'failure' => $frontendUrl,
+                        'pending' => $frontendUrl,
+                    ],
+                    'notification_url'   => $notificationUrl,
+                    'external_reference' => (string) $pagoPendiente->id,
+                    'auto_return'        => 'approved',
+                ];
+
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, 'https://api.mercadopago.com/checkout/preferences');
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($preferenceData));
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'Authorization: Bearer ' . $token,
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                ]);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
+                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $error    = curl_error($ch);
+                curl_close($ch);
+
+                if ($error) {
+                    \Log::error('[registrarPago] Error de conexión con MP (rama 1)', [
+                        'error' => $error,
+                        'pago_id' => $pagoPendiente->id,
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error de conexión con Mercado Pago: ' . $error,
+                    ], 500);
+                }
+
+                $data = json_decode($response, true);
+
+                if ($httpCode !== 201 && $httpCode !== 200) {
+                    \Log::error('[registrarPago] MP rechazó la preferencia (rama 1)', [
+                        'http_code' => $httpCode,
+                        'response'  => $data,
+                        'pago_id'   => $pagoPendiente->id,
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al actualizar preferencia: ' . ($data['message'] ?? 'Error desconocido'),
+                    ], 500);
+                }
+
+                // Actualizar preference_id
+                $pagoPendiente->preference_id = $data['id'];
+                $pagoPendiente->save();
+
+                // Generar datos bancarios actualizados
+                $banco        = config('services.banco.nombre', 'BBVA Bancomer');
+                $clabe        = config('services.banco.clabe', '012180004123456789');
+                $cuenta       = config('services.banco.cuenta', '1234567890');
+                $beneficiario = config('services.banco.beneficiario', 'Tu Empresa SA de CV');
+                $referencia   = 'REF-' . $pagoPendiente->id . '-' . now()->format('YmdHis');
+
+                $pagoPendiente->clabe_interbancaria = $clabe;
+                $pagoPendiente->numero_cuenta       = $cuenta;
+                $pagoPendiente->banco_emisor        = $banco;
+                $pagoPendiente->nombre_beneficiario = $beneficiario;
+                $pagoPendiente->referencia_banco    = $referencia;
+                $pagoPendiente->fecha_expiracion    = now()->addDays(3);
+                $pagoPendiente->save();
+
+                $instrucciones = [
+                    'pasos' => [
+                        '1. Ingresa a la App Mercado Pago ',
+                        '2. Selecciona tu medio de pago ',
+                        '3. Corrobora el monto exacto a pagar: $' . number_format($request->monto_pago, 2) . ' MXN',
+                        '4. Agrega tu tarjeta de debito o credito da clic en pagar o transfiere desde tu banca',
+                        '5. La transferencia se reflejará en 24-48 horas hábiles pago con tarjeta al instante',
+                    ],
+                    'tiempo_estimado' => '24-48 horas hábiles',
+                ];
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pago actualizado exitosamente',
+                    'data'    => [
+                        'pago_id'            => $pagoPendiente->id,
+                        'preference_id'      => $pagoPendiente->preference_id,
+                        'init_point'         => $data['init_point'],
+                        'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
+                        'monto'              => $pagoPendiente->monto_pagado,
+                        'prestamo_folio'     => $prestamo->folio,
+                        'es_actualizado'     => true,
+                        'datos'              => [
+                            'instrucciones' => $instrucciones,
+                        ],
+                    ],
+                ], 200);
+            }
+
+            // 🔹 CREAR NUEVO PAGO (SI NO EXISTE PENDIENTE)
             $nuevo_restante = $deuda_actual - $request->monto_pago;
             $nuevos_pagos   = ($prestamo->pagos_realizados ?? 0) + 1;
             $pago_quincenal = $prestamo->monto_total_pagar / $prestamo->numero_pagos;
@@ -122,32 +285,32 @@ class pagoController extends Controller
                 $tipo_pago = 'completo';
             }
 
-            // Actualizar los datos del pago
-            $pagoPendiente->monto_pagado      = $request->monto_pago;
-            $pagoPendiente->monto_restante    = $nuevo_restante;
-            $pagoPendiente->saldo_antes_pago  = $deuda_actual;
-            $pagoPendiente->tipo_pago         = $tipo_pago;
-            $pagoPendiente->es_adelantado     = $es_pago_adelantado;
-            $pagoPendiente->numero_quincena   = $nuevos_pagos;
-            $pagoPendiente->referencia        = $request->referencia;
-            $pagoPendiente->observaciones     = $request->observaciones;
-            $pagoPendiente->metodo_pago       = $request->metodo_pago ?? 'Mercado Pago';
+            $pago = Pago::create([
+                'prestamo_id'               => $prestamo->id,
+                'usuario_id'                => $request->usuario_id,
+                'monto_pagado'              => $request->monto_pago,
+                'monto_restante'            => $nuevo_restante,
+                'saldo_antes_pago'          => $deuda_actual,
+                'tipo_pago'                 => $tipo_pago,
+                'es_adelantado'             => $es_pago_adelantado,
+                'numero_quincena'           => $nuevos_pagos,
+                'fecha_pago'                => now(),
+                'referencia'                => $request->referencia,
+                'observaciones'             => $request->observaciones,
+                'metodo_pago'               => $request->metodo_pago ?? 'Mercado Pago',
+                'usuario_registro'          => $user_token->id,
+                'estado_pago'               => 'pendiente',
+                'fecha_confirmacion'        => null,
+                'fecha_desembolso_original' => $prestamo->fecha_desembolso,
+                'status'                    => 0,
+                'status_mp'                 => 'pending',
+            ]);
 
-            // ✅ FIX 2: RESET de campos para que el webhook procese el nuevo pago
-            $pagoPendiente->status             = 0;
-            $pagoPendiente->status_mp          = 'pending';
-            $pagoPendiente->estado_pago        = 'pendiente';
-            $pagoPendiente->fecha_confirmacion = null;
-            $pagoPendiente->no_pago_mp         = null;
-            $pagoPendiente->payment_method     = null;
-            $pagoPendiente->url_pdf            = null;
-            $pagoPendiente->fecha_verificacion = null;
-
-            $pagoPendiente->save();
-
+            // 🔹 GENERAR PREFERENCIA EN MERCADO PAGO
             $token = config('services.mercadopago.access_token');
 
             if (empty($token) || $token === 'null') {
+                $pago->delete();
                 return response()->json([
                     'success' => false,
                     'message' => 'Token de Mercado Pago no configurado',
@@ -162,7 +325,7 @@ class pagoController extends Controller
             $preferenceData = [
                 'items' => [
                     [
-                        'id'          => 'pago_prestamo_' . $pagoPendiente->id,
+                        'id'          => 'pago_prestamo_' . $pago->id,
                         'title'       => 'Pago de préstamo - Folio: ' . $prestamo->folio,
                         'description' => 'Pago quincenal de préstamo #' . $prestamo->folio,
                         'quantity'    => 1,
@@ -180,7 +343,7 @@ class pagoController extends Controller
                     'pending' => $frontendUrl,
                 ],
                 'notification_url'   => $notificationUrl,
-                'external_reference' => (string) $pagoPendiente->id,
+                'external_reference' => (string) $pago->id,
                 'auto_return'        => 'approved',
             ];
 
@@ -203,6 +366,11 @@ class pagoController extends Controller
             curl_close($ch);
 
             if ($error) {
+                \Log::error('[registrarPago] Error de conexión con MP (rama 2)', [
+                    'error'   => $error,
+                    'pago_id' => $pago->id,
+                ]);
+                $pago->delete();
                 return response()->json([
                     'success' => false,
                     'message' => 'Error de conexión con Mercado Pago: ' . $error,
@@ -212,30 +380,35 @@ class pagoController extends Controller
             $data = json_decode($response, true);
 
             if ($httpCode !== 201 && $httpCode !== 200) {
+                \Log::error('[registrarPago] MP rechazó la preferencia (rama 2)', [
+                    'http_code' => $httpCode,
+                    'response'  => $data,
+                    'pago_id'   => $pago->id,
+                ]);
+                $pago->delete();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error al actualizar preferencia: ' . ($data['message'] ?? 'Error desconocido'),
+                    'message' => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
                 ], 500);
             }
 
-            // Actualizar preference_id
-            $pagoPendiente->preference_id = $data['id'];
-            $pagoPendiente->save();
+            $pago->preference_id = $data['id'];
+            $pago->save();
 
-            // Generar datos bancarios actualizados
+            // 🔹 GENERAR DATOS DE TRANSFERENCIA
             $banco        = config('services.banco.nombre', 'BBVA Bancomer');
             $clabe        = config('services.banco.clabe', '012180004123456789');
             $cuenta       = config('services.banco.cuenta', '1234567890');
             $beneficiario = config('services.banco.beneficiario', 'Tu Empresa SA de CV');
-            $referencia   = 'REF-' . $pagoPendiente->id . '-' . now()->format('YmdHis');
+            $referencia   = 'REF-' . $pago->id . '-' . now()->format('YmdHis');
 
-            $pagoPendiente->clabe_interbancaria = $clabe;
-            $pagoPendiente->numero_cuenta       = $cuenta;
-            $pagoPendiente->banco_emisor        = $banco;
-            $pagoPendiente->nombre_beneficiario = $beneficiario;
-            $pagoPendiente->referencia_banco    = $referencia;
-            $pagoPendiente->fecha_expiracion    = now()->addDays(3);
-            $pagoPendiente->save();
+            $pago->clabe_interbancaria = $clabe;
+            $pago->numero_cuenta       = $cuenta;
+            $pago->banco_emisor        = $banco;
+            $pago->nombre_beneficiario = $beneficiario;
+            $pago->referencia_banco    = $referencia;
+            $pago->fecha_expiracion    = now()->addDays(3);
+            $pago->save();
 
             $instrucciones = [
                 'pasos' => [
@@ -250,185 +423,35 @@ class pagoController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Pago actualizado exitosamente',
+                'message' => 'Preferencia de pago creada exitosamente',
                 'data'    => [
-                    'pago_id'            => $pagoPendiente->id,
-                    'preference_id'      => $pagoPendiente->preference_id,
+                    'pago_id'            => $pago->id,
+                    'preference_id'      => $data['id'],
                     'init_point'         => $data['init_point'],
                     'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
-                    'monto'              => $pagoPendiente->monto_pagado,
                     'prestamo_folio'     => $prestamo->folio,
-                    'es_actualizado'     => true,
                     'datos'              => [
                         'instrucciones' => $instrucciones,
                     ],
                 ],
             ], 200);
-        }
+        } catch (\Exception $e) {
+            // ✅ FIX: Log detallado para ver el error real
+            \Log::error('[registrarPago] Error crítico', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'trace'   => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
 
-        // 🔹 CREAR NUEVO PAGO (SI NO EXISTE PENDIENTE)
-        $nuevo_restante = $deuda_actual - $request->monto_pago;
-        $nuevos_pagos   = ($prestamo->pagos_realizados ?? 0) + 1;
-        $pago_quincenal = $prestamo->monto_total_pagar / $prestamo->numero_pagos;
-
-        $tipo_pago = 'normal';
-        if ($es_pago_adelantado || $request->monto_pago > $pago_quincenal) {
-            $tipo_pago = 'anticipado';
-        }
-        if ($nuevo_restante <= 0) {
-            $tipo_pago = 'completo';
-        }
-
-        $pago = Pago::create([
-            'prestamo_id'               => $prestamo->id,
-            'usuario_id'                => $request->usuario_id,
-            'monto_pagado'              => $request->monto_pago,
-            'monto_restante'            => $nuevo_restante,
-            'saldo_antes_pago'          => $deuda_actual,
-            'tipo_pago'                 => $tipo_pago,
-            'es_adelantado'             => $es_pago_adelantado,
-            'numero_quincena'           => $nuevos_pagos,
-            'fecha_pago'                => now(),
-            'referencia'                => $request->referencia,
-            'observaciones'             => $request->observaciones,
-            'metodo_pago'               => $request->metodo_pago ?? 'Mercado Pago',
-            'usuario_registro'          => $user_token->id,
-            'estado_pago'               => 'pendiente',
-            'fecha_confirmacion'        => null,
-            'fecha_desembolso_original' => $prestamo->fecha_desembolso,
-            'status'                    => 0,
-            'status_mp'                 => 'pending',
-        ]);
-
-        // 🔹 GENERAR PREFERENCIA EN MERCADO PAGO
-        $token = config('services.mercadopago.access_token');
-
-        if (empty($token) || $token === 'null') {
-            $pago->delete();
             return response()->json([
                 'success' => false,
-                'message' => 'Token de Mercado Pago no configurado',
+                'message' => 'Error al crear la preferencia de pago',
+                'error'   => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
-
-        $isSandbox = config('app.env') !== 'production';
-
-        $notificationUrl = config('services.mercadopago.notification_url');
-        $frontendUrl     = rtrim(config('services.mercadopago.frontend_url'), '/');
-
-        $preferenceData = [
-            'items' => [
-                [
-                    'id'          => 'pago_prestamo_' . $pago->id,
-                    'title'       => 'Pago de préstamo - Folio: ' . $prestamo->folio,
-                    'description' => 'Pago quincenal de préstamo #' . $prestamo->folio,
-                    'quantity'    => 1,
-                    'unit_price'  => (float) $request->monto_pago,
-                    'currency_id' => 'MXN',
-                ],
-            ],
-            'payer' => [
-                'name'  => $user_token->name ?? 'Cliente',
-                'email' => $user_token->email ?? 'cliente@email.com',
-            ],
-            'back_urls' => [
-                'success' => $frontendUrl,
-                'failure' => $frontendUrl,
-                'pending' => $frontendUrl,
-            ],
-            'notification_url'   => $notificationUrl,
-            'external_reference' => (string) $pago->id,
-            'auto_return'        => 'approved',
-        ];
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://api.mercadopago.com/checkout/preferences');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($preferenceData));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $token,
-            'Content-Type: application/json',
-            'Accept: application/json',
-        ]);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, config('app.env') === 'production');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error    = curl_error($ch);
-        curl_close($ch);
-
-        if ($error) {
-            $pago->delete();
-            return response()->json([
-                'success' => false,
-                'message' => 'Error de conexión con Mercado Pago: ' . $error,
-            ], 500);
-        }
-
-        $data = json_decode($response, true);
-
-        if ($httpCode !== 201 && $httpCode !== 200) {
-            $pago->delete();
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al crear preferencia: ' . ($data['message'] ?? 'Error desconocido'),
-            ], 500);
-        }
-
-        $pago->preference_id = $data['id'];
-        $pago->save();
-
-        // 🔹 GENERAR DATOS DE TRANSFERENCIA
-        $banco        = config('services.banco.nombre', 'BBVA Bancomer');
-        $clabe        = config('services.banco.clabe', '012180004123456789');
-        $cuenta       = config('services.banco.cuenta', '1234567890');
-        $beneficiario = config('services.banco.beneficiario', 'Tu Empresa SA de CV');
-        $referencia   = 'REF-' . $pago->id . '-' . now()->format('YmdHis');
-
-        $pago->clabe_interbancaria = $clabe;
-        $pago->numero_cuenta       = $cuenta;
-        $pago->banco_emisor        = $banco;
-        $pago->nombre_beneficiario = $beneficiario;
-        $pago->referencia_banco    = $referencia;
-        $pago->fecha_expiracion    = now()->addDays(3);
-        $pago->save();
-
-        $instrucciones = [
-            'pasos' => [
-                '1. Ingresa a la App Mercado Pago ',
-                '2. Selecciona tu medio de pago ',
-                '3. Corrobora el monto exacto a pagar: $' . number_format($request->monto_pago, 2) . ' MXN',
-                '4. Agrega tu tarjeta de debito o credito da clic en pagar o transfiere desde tu banca',
-                '5. La transferencia se reflejará en 24-48 horas hábiles pago con tarjeta al instante',
-            ],
-            'tiempo_estimado' => '24-48 horas hábiles',
-        ];
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Preferencia de pago creada exitosamente',
-            'data'    => [
-                'pago_id'            => $pago->id,
-                'preference_id'      => $data['id'],
-                'init_point'         => $data['init_point'],
-                'sandbox_init_point' => $data['sandbox_init_point'] ?? null,
-                'prestamo_folio'     => $prestamo->folio,
-                'datos'              => [
-                    'instrucciones' => $instrucciones,
-                ],
-            ],
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al crear la preferencia de pago',
-            'error'   => config('app.debug') ? $e->getMessage() : null,
-        ], 500);
     }
-}
-
 
 
     /**
@@ -488,7 +511,6 @@ class pagoController extends Controller
                     'transaction_amount' => $pago_mp['transaction_amount'] ?? null,
                 ]);
 
-
                 //SERVICIO DE COMERCIO PAGO
                 //SERVICIO DE COMERCIO PAGO Y SUSCRIPCIONES
                 $externalRef = (string) ($pago_mp['external_reference'] ?? '');
@@ -537,8 +559,6 @@ class pagoController extends Controller
 
                 //BUSCAR EL PAGO - PRIORIDAD CORRECTA
                 $pago = null;
-
-
 
                 // 1. PRIMERO: Por external_reference (más confiable)
                 $pago_id = $pago_mp['external_reference'] ?? null;
@@ -1036,12 +1056,6 @@ class pagoController extends Controller
 
     /**
      * Calcula y actualiza las quincenas completadas según el monto pagado.
-     *
-     * Regla:
-     * - Se calcula por monto acumulado, no por conteo de abonos.
-     * - quincenas_completadas = floor(monto_pagado / pago_quincenal)
-     * - Tope: no puede exceder numero_pagos
-     * - Si el préstamo quedó liquidado, quincenas_completadas = numero_pagos
      */
     private function actualizarQuincenasCompletadas(Prestamo $prestamo): void
     {
@@ -1052,7 +1066,6 @@ class pagoController extends Controller
             return;
         }
 
-        // Si ya está liquidado, todas las quincenas están completas
         if (($prestamo->monto_restante ?? 0) <= 0) {
             $prestamo->quincenas_completadas = $numero_pagos;
             return;
@@ -1070,18 +1083,12 @@ class pagoController extends Controller
             return;
         }
 
-        // Monto acumulado pagado (con floor a 2 decimales para evitar problemas de float)
         $monto_pagado = $monto_total - ($prestamo->monto_restante ?? $monto_total);
         $monto_pagado = floor($monto_pagado * 100) / 100;
 
-        // Cuántas quincenas completas caben en el monto pagado
         $completadas = (int) floor($monto_pagado / $pago_quincenal);
-
-        // Tope: no puede exceder el total
         $completadas = min($completadas, $numero_pagos);
 
-        // Regla de negocio: si aún hay saldo y todas las quincenas están completas
-        // por monto, dejar al menos 1 pendiente (para que la UI muestre coherencia)
         if (($prestamo->monto_restante ?? 0) > 0 && $completadas >= $numero_pagos) {
             $completadas = $numero_pagos - 1;
         }
