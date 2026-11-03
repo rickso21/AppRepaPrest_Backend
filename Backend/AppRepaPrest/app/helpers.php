@@ -394,22 +394,38 @@ if (!function_exists('crypto_rand_secure')) {
         return $min + $rnd;
     }
 }
+if (!function_exists('tasa_segun_plazo')) {
+    function tasa_segun_plazo($quincenas)
+    {
+        $tasas = [
+            1  => 0.1800,   // 18.00%
+            2  => 0.2000,   // 20.00%
+            3  => 0.2200,   // 22.00%
+            4  => 0.2400,   // 24.00%
+            5  => 0.2600,   // 26.00%
+            6  => 0.2800,   // 28.00%
+            7  => 0.3000,   // 30.00%
+            8  => 0.3200,   // 32.00%
+            9  => 0.3400,   // 34.00%
+            10 => 0.3500,   // 35.00% (tope de la tabla)
+        ];
 
-// FUNCIONES PARA CÁLCULO DE INTERÉS
+        $quincenas = (int) $quincenas;
+
+        if ($quincenas > 10) {
+            return 0.3500;
+        }
+
+        return $tasas[$quincenas] ?? 0.1800;
+    }
+}
+
 
 if (!function_exists('calcula_interes_detallado')) {
     function calcula_interes_detallado($monto, $quincenas)
     {
-        // 1. TASA DE INTERÉS QUINCENAL SEGÚN PLAZO
-        $tasas = [
-            1 => 0.0795,
-            2 => 0.0795,
-            3 => 0.0795,
-            4 => 0.0795,
-            5 => 0.0795,
-        ];
-
-        $tasa_quincenal = $tasas[$quincenas] ?? 0.0675;
+        // ✅ ÚNICA FUENTE DE VERDAD: tasa_segun_plazo()
+        $tasa_quincenal = tasa_segun_plazo($quincenas);
         $iva = 0.16;
 
         $interes_quincenal = $monto * $tasa_quincenal;
@@ -470,6 +486,9 @@ if (!function_exists('calcula_interes_detallado')) {
     }
 }
 
+
+
+
 if (!function_exists('calcula_interes')) {
     function calcula_interes($monto, $quincenas)
     {
@@ -486,31 +505,37 @@ if (!function_exists('pago_quincenal')) {
     }
 }
 
-if (!function_exists('tasa_segun_plazo')) {
-    function tasa_segun_plazo($quincenas)
+
+if (!function_exists('pagos_quincenales')) {
+    function pagos_quincenales($monto, $quincenas)
     {
-        $tasas = [
-            1  => 0.1800,   // 18.00%
-            2  => 0.2000,   // 20.00%
-            3  => 0.2200,   // 22.00%
-            4  => 0.2400,   // 24.00%
-            5  => 0.2600,   // 26.00%
-            6  => 0.2800,   // 28.00%
-            7  => 0.3000,   // 30.00%
-            8  => 0.3200,   // 32.00%
-            9  => 0.3400,   // 34.00%
-            10 => 0.3500,   // 35.00% (tope de la tabla)
+        $detalle = calcula_interes_detallado($monto, $quincenas);
+        return array_column($detalle['desglose_quincenal'], 'pago_total');
+    }
+}
+
+
+if (!function_exists('total_a_pagar')) {
+    function total_a_pagar($monto, $quincenas)
+    {
+        $detalle = calcula_interes_detallado($monto, $quincenas);
+        return $detalle['total_pagar'];
+    }
+}
+
+if (!function_exists('verificar_pagos_exactos')) {
+    function verificar_pagos_exactos($monto, $quincenas)
+    {
+        $detalle = calcula_interes_detallado($monto, $quincenas);
+        $pagos = array_column($detalle['desglose_quincenal'], 'pago_total');
+        $suma = array_sum($pagos);
+
+        return [
+            'es_exacto' => $suma === $detalle['total_pagar'],
+            'total_pagos' => $suma,
+            'total_esperado' => $detalle['total_pagar'],
+            'diferencia' => $suma - $detalle['total_pagar']
         ];
-
-        $quincenas = (int) $quincenas;
-
-        if ($quincenas > 10) {
-            // Para plazos > 10, tope global del 35%
-            return 0.3500;
-        }
-
-        // Fallback: si viene un valor raro (0, negativo, etc.), usar 1 quincena
-        return $tasas[$quincenas] ?? 0.1800;
     }
 }
 
@@ -535,38 +560,6 @@ if (!function_exists('calcular_incremento_entero')) {
             default:
                 return (int) ceil($incremento_base);
         }
-    }
-}
-
-if (!function_exists('pagos_quincenales')) {
-    function pagos_quincenales($monto, $quincenas)
-    {
-        $detalle = calcula_interes_detallado($monto, $quincenas);
-        return array_column($detalle['desglose_quincenal'], 'pago_total');
-    }
-}
-
-if (!function_exists('total_a_pagar')) {
-    function total_a_pagar($monto, $quincenas)
-    {
-        $detalle = calcula_interes_detallado($monto, $quincenas);
-        return $detalle['total_pagar'];
-    }
-}
-
-if (!function_exists('verificar_pagos_exactos')) {
-    function verificar_pagos_exactos($monto, $quincenas)
-    {
-        $detalle = calcula_interes_detallado($monto, $quincenas);
-        $pagos = array_column($detalle['desglose_quincenal'], 'pago_total');
-        $suma = array_sum($pagos);
-
-        return [
-            'es_exacto' => $suma === $detalle['total_pagar'],
-            'total_pagos' => $suma,
-            'total_esperado' => $detalle['total_pagar'],
-            'diferencia' => $suma - $detalle['total_pagar']
-        ];
     }
 }
 
