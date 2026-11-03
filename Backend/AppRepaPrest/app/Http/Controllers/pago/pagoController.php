@@ -166,9 +166,9 @@ class pagoController extends Controller
                             'email' => $user_token->email ?? 'cliente@email.com',
                         ],
                         'back_urls' => [
-                            'success' => "{$frontendUrl}",
-                            'failure' => "{$frontendUrl}",
-                            'pending' => "{$frontendUrl}",
+                            'success' => $frontendUrl,  // https://deliverysobreruedas.com
+    'failure' => $frontendUrl,
+    'pending' => $frontendUrl,
                         ],
                         'notification_url'   => $notificationUrl,
                         'external_reference' => (string) $pagoPendiente->id,
@@ -325,9 +325,9 @@ class pagoController extends Controller
                     'email' => $user_token->email ?? 'cliente@email.com',
                 ],
                 'back_urls' => [
-                    'success' => "{$frontendUrl}",
-                    'failure' => "{$frontendUrl}",
-                    'pending' => "{$frontendUrl}",
+                     'success' => $frontendUrl,  // https://deliverysobreruedas.com
+    'failure' => $frontendUrl,
+    'pending' => $frontendUrl,
                 ],
                 'notification_url'   => $notificationUrl,
                 'external_reference' => (string) $pago->id,
